@@ -43,7 +43,8 @@ next-env.d.ts
 # IDEs and Editors
 .vscode/
 .idea/
-*.swp
+*.
+swp
 *.swo
 *~
 
@@ -72,3 +73,11 @@ docker-compose.override.yml
 .cache/
 .temp/
 .tmp/
+ROUTE_DEBUG.md
+RESULTS_FLOW.md
+deploy-cloudrun.ps1
+DEPLOYMENT.md
+GITHUB_INTEGRATION.md
+INTEGRATION.md
+test-review.html
+test-register-new.js

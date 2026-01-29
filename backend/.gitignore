@@ -34,3 +34,9 @@ coverage/
 # Build
 dist/
 build/
+
+backend/AGGREGATION_FEATURES.md
+backend/ANALYZE_ENDPOINT.md
+backend/PROGRESS_TRACKING.md
+backend/test-app.js
+backend/test-register.js
