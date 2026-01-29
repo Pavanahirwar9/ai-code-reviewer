@@ -32,15 +32,9 @@ app.use(helmet());
 
 // CORS configuration
 const corsOptions = {
-    origin: [
-        'http://localhost:3000',
-        'https://ai-code-reviewer-600y.onrender.com',
-        process.env.FRONTEND_URL
-    ].filter(Boolean),
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     credentials: true,
     optionsSuccessStatus: 200,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
 };
 app.use(cors(corsOptions));
 
@@ -79,31 +73,12 @@ if (process.env.NODE_ENV === 'development') {
 // Static files (for uploaded files)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Root endpoint
-app.get('/', (req, res) => {
-    res.status(200).json({
-        success: true,
-        message: 'AI Code Reviewer API is running',
-        version: '1.0.0',
-        status: 'healthy',
-        endpoints: {
-            auth: '/api/auth',
-            review: '/api/review',
-            github: '/api/github',
-            user: '/api/user'
-        }
-    });
-});
-
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({
         success: true,
-        status: 'healthy',
         message: 'Server is healthy',
         timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        environment: process.env.NODE_ENV || 'development'
     });
 });
 

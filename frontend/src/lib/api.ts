@@ -3,7 +3,7 @@
  * API client for backend communication
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://ai-code-reviewer-backend-wbf1.onrender.com';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 interface ApiResponse<T = any> {
     success: boolean;
