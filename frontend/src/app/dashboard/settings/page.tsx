@@ -38,7 +38,8 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+// Backend base URL (without /api) for static assets like avatars
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -157,14 +158,11 @@ export default function SettingsPage() {
   const handleDeleteAccount = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/user/account`, {
+      const response = await api.request('/user/account', {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
+      }, true);
 
-      if (response.ok) {
+      if (response.success) {
         toast.success("Account deleted successfully");
         logout();
         router.push('/');
@@ -254,7 +252,7 @@ export default function SettingsPage() {
           {/* Avatar */}
           <div className="flex items-start gap-6">
             <Avatar className="h-20 w-20">
-              {user?.avatar && <AvatarImage src={`${API_URL}${user.avatar}`} key={user.avatar} alt={profile.name} />}
+              {user?.avatar && <AvatarImage src={`${BACKEND_URL}${user.avatar}`} key={user.avatar} alt={profile.name} />}
               <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
                 {profile.name.split(" ").map(n => n[0]).join("").toUpperCase() || "U"}
               </AvatarFallback>

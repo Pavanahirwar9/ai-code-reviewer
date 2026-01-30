@@ -223,6 +223,24 @@ class ApiClient {
             method: 'GET',
         }, true);
     }
+
+    // Download report as text file
+    async downloadReport(reviewId: string): Promise<Blob> {
+        const token = this.getToken();
+        const response = await fetch(`${this.baseURL}/review/${reviewId}/download`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+            credentials: 'include',
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to download report');
+        }
+
+        return response.blob();
+    }
 }
 
 export const api = new ApiClient(API_URL);

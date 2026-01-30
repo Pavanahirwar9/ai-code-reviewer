@@ -34,7 +34,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+// Backend base URL (without /api) for static assets like avatars
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -222,7 +223,7 @@ export default function DashboardLayout({
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                   <Avatar className="h-9 w-9">
-                    {user?.avatar && <AvatarImage src={`${API_URL}${user.avatar}`} key={user.avatar} alt={user?.name} />}
+                    {user?.avatar && <AvatarImage src={`${BACKEND_URL}${user.avatar}`} key={user.avatar} alt={user?.name} />}
                     <AvatarFallback className="bg-primary text-primary-foreground">
                       {user?.name?.substring(0, 2).toUpperCase() || 'U'}
                     </AvatarFallback>

@@ -285,30 +285,16 @@ export default function ResultsPage() {
 
     setDownloading(true);
     try {
-      // Open download in new tab
-      const token = localStorage.getItem('token');
-      const downloadUrl = `http://localhost:5000/api/review/${params.id}/download`;
-
-      const response = await fetch(downloadUrl, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `review-${params.id}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        toast.success('Report downloaded successfully!');
-      } else {
-        toast.error('Failed to download report');
-      }
+      const blob = await api.downloadReport(params.id as string);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `review-${params.id}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success('Report downloaded successfully!');
     } catch (error) {
       console.error('Download error:', error);
       toast.error('Failed to download report');
