@@ -19,7 +19,6 @@ const {
     analyzeRepoFileByFile,
     getScans,
     getScan,
-    addUserRepo,
 } = require('../controllers/github.controller');
 const { protect } = require('../middleware/auth.middleware');
 const { githubRepoValidation, validate } = require('../utils/validators');
@@ -36,7 +35,6 @@ router.get('/repos', getRepos);
 router.get('/repos/:owner/:repo/branches', getBranches);
 router.get('/scans', getScans);
 router.get('/scan/:scanId', getScan);
-router.post('/add-user-repo', addUserRepo);
 router.post('/analyze', githubRepoValidation, validate, analyzeRepo);
 router.post('/analyze-repo', analyzeRepoFileByFile);
 router.post('/tree', getRepoTree);

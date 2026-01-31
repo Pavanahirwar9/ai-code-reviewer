@@ -212,19 +212,6 @@ class ApiClient {
         }, true);
     }
 
-    /**
-     * Add user's own GitHub repository (public or private)
-     * @param repoFullName - Repository full name (owner/repo)
-     * @param branch - Optional branch name
-     * @returns Added repository data
-     */
-    async addUserGitHubRepo(repoFullName: string, branch?: string) {
-        return this.request('/github/add-user-repo', {
-            method: 'POST',
-            body: JSON.stringify({ repoFullName, branch }),
-        }, true);
-    }
-
     async getGitHubScans(page = 1, limit = 10) {
         return this.request(`/github/scans?page=${page}&limit=${limit}`, {
             method: 'GET',

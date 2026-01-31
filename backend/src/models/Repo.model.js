@@ -48,18 +48,6 @@ const repoSchema = new mongoose.Schema({
     description: {
         type: String,
     },
-    owner: {
-        type: String,
-    },
-    stars: {
-        type: Number,
-        default: 0,
-    },
-    source: {
-        type: String,
-        enum: ['github', 'user-github', 'public-url'],
-        default: 'github',
-    },
     createdAt: {
         type: Date,
         default: Date.now,
