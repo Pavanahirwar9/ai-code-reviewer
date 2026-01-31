@@ -421,7 +421,140 @@ exports.disconnect = asyncHandler(async (req, res) => {
 
     sendSuccess(res, null, 'GitHub account disconnected');
 });
+/**
+ * @route   POST /api/github/add-user-repo
+ * @desc    Add and validate user's own GitHub repository (public or private)
+ * @access  Private
+ * 
+ * Purpose: Allow authenticated users to add their own GitHub repositories
+ * - Validates user has GitHub OAuth token
+ * - Verifies repository exists and user has access
+ * - Supports both public and private repositories
+ * - Prevents duplicate repository entries
+ * - Saves repository metadata for future analysis
+ */
+exports.addUserRepo = asyncHandler(async (req, res) => {
+    const { repoFullName, branch } = req.body;
 
+    // Validate input
+    if (!repoFullName) {
+        return sendError(res, 'Repository full name is required (format: owner/repo)', 400);
+    }
+
+    // Parse repository full name
+    const [owner, repo] = repoFullName.split('/');
+    if (!owner || !repo) {
+        return sendError(res, 'Invalid repository format. Expected: owner/repo', 400);
+    }
+
+    logger.info(`User ${req.user.email} attempting to add repository: ${repoFullName}`);
+
+    // Step 1: Verify user has GitHub OAuth token
+    const accessToken = await githubService.getGitHubToken(req.user._id);
+    if (!accessToken) {
+        return sendError(res, 'GitHub not connected. Please connect your GitHub account first.', 401);
+    }
+
+    try {
+        // Step 2: Fetch repository information from GitHub API
+        // This validates: repo exists, user has access (private repos require OAuth)
+        const githubClient = require('axios').create({
+            baseURL: 'https://api.github.com',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'AI-Code-Reviewer',
+            },
+        });
+
+        logger.info(`Fetching repository info from GitHub: ${owner}/${repo}`);
+
+        const repoResponse = await githubClient.get(`/repos/${owner}/${repo}`);
+        const repoData = repoResponse.data;
+
+        // Step 3: Verify user owns the repository or has access
+        // For private repos, GitHub API will return 404 if user doesn't have access
+        // Public repos are accessible to everyone
+        const isPrivate = repoData.private;
+        const repoOwner = repoData.owner.login;
+        const authenticatedUser = req.user.githubUsername;
+
+        logger.info(`Repository ${repoFullName} - Private: ${isPrivate}, Owner: ${repoOwner}`);
+
+        // Additional security: For private repos, ensure user is the owner or collaborator
+        if (isPrivate && authenticatedUser !== repoOwner) {
+            // Check if user is a collaborator
+            try {
+                await githubClient.get(`/repos/${owner}/${repo}/collaborators/${authenticatedUser}`);
+                logger.info(`User ${authenticatedUser} is a collaborator on ${repoFullName}`);
+            } catch (error) {
+                logger.warn(`User ${authenticatedUser} does not have access to private repo ${repoFullName}`);
+                return sendError(res, 'You do not have access to this private repository', 403);
+            }
+        }
+
+        // Step 4: Extract repository metadata
+        const repoMetadata = {
+            userId: req.user._id,
+            repoName: repo,
+            repoFullName: repoData.full_name,
+            repoUrl: repoData.html_url,
+            defaultBranch: branch || repoData.default_branch,
+            isPrivate: repoData.private,
+            language: repoData.language,
+            description: repoData.description,
+            owner: repoOwner,
+            stars: repoData.stargazers_count,
+            source: 'user-github', // Mark as user-added repository
+        };
+
+        // Step 5: Check for duplicate - prevent adding same repo twice
+        const existingRepo = await Repo.findOne({
+            userId: req.user._id,
+            repoFullName: repoData.full_name,
+        });
+
+        if (existingRepo) {
+            logger.info(`Repository ${repoFullName} already exists for user ${req.user.email}`);
+            return sendSuccess(
+                res,
+                {
+                    repo: existingRepo,
+                    alreadyExists: true,
+                },
+                'Repository already exists in your list'
+            );
+        }
+
+        // Step 6: Save repository to database
+        const savedRepo = await Repo.create(repoMetadata);
+
+        logger.info(`Repository ${repoFullName} successfully added for user ${req.user.email}`);
+
+        sendSuccess(
+            res,
+            {
+                repo: savedRepo,
+                alreadyExists: false,
+            },
+            'Repository added successfully'
+        );
+
+    } catch (error) {
+        logger.error(`Failed to add repository ${repoFullName}: ${error.message}`);
+
+        // Handle specific GitHub API errors
+        if (error.response?.status === 404) {
+            return sendError(res, 'Repository not found or you do not have access', 404);
+        }
+
+        if (error.response?.status === 403) {
+            return sendError(res, 'Access denied. You may have exceeded API rate limits or lack permissions.', 403);
+        }
+
+        return sendError(res, `Failed to add repository: ${error.message}`, 500);
+    }
+});
 /**
  * @route   GET /api/github/scans
  * @desc    Get recent repository scans

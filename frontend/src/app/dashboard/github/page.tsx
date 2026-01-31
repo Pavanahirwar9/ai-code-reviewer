@@ -80,6 +80,9 @@ export default function GitHubIntegrationPage() {
   const [githubUsername, setGithubUsername] = useState("");
   const [repos, setRepos] = useState<any[]>([]);
   const [repoUrl, setRepoUrl] = useState("");
+  const [userRepoInput, setUserRepoInput] = useState("");
+  const [userRepoBranch, setUserRepoBranch] = useState("");
+  const [isAddingUserRepo, setIsAddingUserRepo] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState("");
   const [selectedBranch, setSelectedBranch] = useState("");
   const [branches, setBranches] = useState<string[]>([]);
@@ -327,6 +330,41 @@ export default function GitHubIntegrationPage() {
     setRepoUrl("");
   };
 
+  const handleAddUserRepo = async () => {
+    if (!userRepoInput) {
+      toast.error("Please enter a repository name (e.g., owner/repo)");
+      return;
+    }
+
+    // Validate format: owner/repo
+    if (!userRepoInput.includes('/')) {
+      toast.error("Please use the format: owner/repository");
+      return;
+    }
+
+    setIsAddingUserRepo(true);
+    try {
+      const response = await api.addUserGitHubRepo(userRepoInput, userRepoBranch || undefined);
+
+      if (response.success) {
+        toast.success(`Repository "${userRepoInput}" added successfully!`);
+        setUserRepoInput("");
+        setUserRepoBranch("");
+        
+        // Refresh the repos list to include the newly added repo
+        await fetchRepos();
+      } else {
+        toast.error(response.error || 'Failed to add repository');
+      }
+    } catch (error: any) {
+      console.error('Add repo error:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to add repository';
+      toast.error(errorMessage);
+    } finally {
+      setIsAddingUserRepo(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -503,6 +541,86 @@ export default function GitHubIntegrationPage() {
                   </>
                 )}
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Add Your Own GitHub Repository */}
+          <Card className="border-border bg-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-xl text-card-foreground">
+                <Github className="h-5 w-5 text-primary" />
+                Add Your Own Repository
+              </CardTitle>
+              <CardDescription>
+                Add any GitHub repository you own or collaborate on (public or private)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="userRepo" className="text-sm font-medium text-foreground">
+                    Repository
+                  </Label>
+                  <Input
+                    id="userRepo"
+                    placeholder="owner/repository"
+                    value={userRepoInput}
+                    onChange={(e) => setUserRepoInput(e.target.value)}
+                    className="h-12"
+                    disabled={isAddingUserRepo}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Enter the repository in owner/repo format (e.g., facebook/react)
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="userRepoBranch" className="text-sm font-medium text-foreground">
+                    Branch (Optional)
+                  </Label>
+                  <Input
+                    id="userRepoBranch"
+                    placeholder="main"
+                    value={userRepoBranch}
+                    onChange={(e) => setUserRepoBranch(e.target.value)}
+                    className="h-12"
+                    disabled={isAddingUserRepo}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Leave empty to use the default branch
+                  </p>
+                </div>
+              </div>
+              <Button 
+                onClick={handleAddUserRepo} 
+                disabled={!userRepoInput || isAddingUserRepo}
+                className="gap-2"
+                size="lg"
+              >
+                {isAddingUserRepo ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Adding Repository...
+                  </>
+                ) : (
+                  <>
+                    <Github className="h-5 w-5" />
+                    Add Repository
+                  </>
+                )}
+              </Button>
+              <div className="rounded-lg bg-muted/50 p-4 border border-border">
+                <div className="flex gap-2">
+                  <AlertCircle className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground mb-1">Repository Access</p>
+                    <p>
+                      You can add any repository you have access to. For private repositories, 
+                      make sure your GitHub OAuth connection has the necessary permissions. 
+                      The repository will be verified against your GitHub account.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
