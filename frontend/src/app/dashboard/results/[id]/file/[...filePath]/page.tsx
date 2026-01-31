@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import AnnotatedCodeViewer from "@/components/code-viewer/AnnotatedCodeViewer";
 import IssueDetailPanel from "@/components/code-viewer/IssueDetailPanel";
-import { ArrowLeft, FileCode, Loader2, AlertCircle } from "lucide-react";
+import { ArrowLeft, FileCode, Loader2, AlertCircle, Edit3 } from "lucide-react";
 import { toast } from "sonner";
 
 interface CodeIssue {
@@ -171,6 +171,12 @@ export default function AnnotatedCodeReviewPage() {
 
         {/* File Info */}
         <div className="flex items-center gap-2">
+          <Link href={`/dashboard/editor/${scanId}/${filePath}`}>
+            <Button variant="default" className="gap-2">
+              <Edit3 className="h-4 w-4" />
+              Edit File
+            </Button>
+          </Link>
           <Badge variant="outline" className="gap-1">
             <FileCode className="h-3 w-3" />
             {fileData.language}

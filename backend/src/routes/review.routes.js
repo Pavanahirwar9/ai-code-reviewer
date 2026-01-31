@@ -15,6 +15,10 @@ const {
     getStats,
     getStatus,
     getFileWithIssues,
+    getFileForEdit,
+    updateFileContent,
+    reanalyzeFile,
+    commitToGitHub,
 } = require('../controllers/review.controller');
 const { protect } = require('../middleware/auth.middleware');
 const { analysisLimiter } = require('../middleware/rateLimit.middleware');
@@ -58,5 +62,11 @@ router.delete('/:id', reviewIdValidation, validate, deleteReview);
 
 // File content with issues (for annotated view)
 router.get('/:scanId/file', reviewIdValidation, validate, getFileWithIssues);
+
+// Code editor routes
+router.get('/:scanId/file/edit', reviewIdValidation, validate, getFileForEdit);
+router.put('/file/update', updateFileContent);
+router.post('/file/reanalyze', reanalyzeFile);
+router.post('/file/commit', commitToGitHub);
 
 module.exports = router;
