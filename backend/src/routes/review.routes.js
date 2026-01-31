@@ -14,6 +14,7 @@ const {
     deleteReview,
     getStats,
     getStatus,
+    getFileWithIssues,
 } = require('../controllers/review.controller');
 const { protect } = require('../middleware/auth.middleware');
 const { analysisLimiter } = require('../middleware/rateLimit.middleware');
@@ -54,5 +55,8 @@ router.get('/:id', reviewIdValidation, validate, getReview);
 router.get('/:id/status', reviewIdValidation, validate, getStatus);
 router.get('/:id/download', reviewIdValidation, validate, downloadReport);
 router.delete('/:id', reviewIdValidation, validate, deleteReview);
+
+// File content with issues (for annotated view)
+router.get('/:scanId/file', reviewIdValidation, validate, getFileWithIssues);
 
 module.exports = router;

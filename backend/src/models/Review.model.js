@@ -107,6 +107,12 @@ const reviewSchema = new mongoose.Schema({
         type: String,
     },
 
+    // Metadata (for storing additional information like repository details, file list, etc.)
+    metadata: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {},
+    },
+
     createdAt: {
         type: Date,
         default: Date.now,

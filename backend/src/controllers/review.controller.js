@@ -350,3 +350,198 @@ exports.getStatus = asyncHandler(async (req, res) => {
 
     sendSuccess(res, statusData, 'Review status retrieved successfully');
 });
+
+/**
+ * @route   GET /api/review/:scanId/file
+ * @desc    Get file content with issues for annotated view
+ * @access  Private
+ */
+exports.getFileWithIssues = asyncHandler(async (req, res) => {
+    const { scanId } = req.params;
+    const { path } = req.query;
+
+    if (!path) {
+        return sendError(res, 'File path is required', 400);
+    }
+
+    logger.info(`Fetching file content for scan ${scanId}, path: ${path}, user: ${req.user.email}`);
+
+    // Find the review/scan
+    const review = await Review.findOne({
+        _id: scanId,
+        userId: req.user._id,
+    });
+
+    if (!review) {
+        return sendError(res, 'Scan not found', 404);
+    }
+
+    // For GitHub scans, fetch the file content
+    if (review.source === 'github' && review.metadata?.repository) {
+        try {
+            const { owner, repo, branch } = review.metadata.repository;
+            const githubService = require('../services/github.service');
+            const accessToken = await githubService.getGitHubToken(req.user._id);
+
+            if (!accessToken) {
+                return sendError(res, 'GitHub token not found', 401);
+            }
+
+            // Fetch file content from GitHub
+            const fileData = await githubService.fetchFileContent(
+                accessToken,
+                owner,
+                repo,
+                path,
+                branch
+            );
+
+            // Extract issues for this specific file
+            const fileIssues = [];
+
+            // Collect bugs for this file
+            if (review.bugs) {
+                review.bugs
+                    .filter(bug => bug.fileName === path)
+                    .forEach(bug => {
+                        fileIssues.push({
+                            line: bug.line || 1,
+                            column: 0,
+                            message: bug.description,
+                            title: bug.title,
+                            code: bug.code,
+                            suggestion: bug.suggestion,
+                            severity: bug.severity || 'warning',
+                            type: 'bug',
+                        });
+                    });
+            }
+
+            // Collect security issues for this file
+            if (review.security) {
+                review.security
+                    .filter(issue => issue.fileName === path)
+                    .forEach(issue => {
+                        fileIssues.push({
+                            line: issue.line || 1,
+                            column: 0,
+                            message: issue.description,
+                            title: issue.title,
+                            code: issue.code,
+                            suggestion: issue.suggestion,
+                            severity: issue.severity || 'critical',
+                            type: 'security',
+                        });
+                    });
+            }
+
+            // Collect performance issues for this file
+            if (review.performance) {
+                review.performance
+                    .filter(issue => issue.fileName === path)
+                    .forEach(issue => {
+                        fileIssues.push({
+                            line: issue.line || 1,
+                            column: 0,
+                            message: issue.description,
+                            title: issue.title,
+                            code: issue.code,
+                            suggestion: issue.suggestion,
+                            severity: issue.severity || 'info',
+                            type: 'performance',
+                        });
+                    });
+            }
+
+            // Sort issues by line number
+            fileIssues.sort((a, b) => a.line - b.line);
+
+            const response = {
+                code: fileData.content,
+                filePath: path,
+                language: detectLanguageFromFilename(path),
+                issues: fileIssues,
+                metadata: {
+                    scanId: review._id,
+                    repository: `${owner}/${repo}`,
+                    branch,
+                    totalIssues: fileIssues.length,
+                },
+            };
+
+            logger.info(`File content fetched successfully: ${path}, ${fileIssues.length} issues found`);
+
+            sendSuccess(res, response, 'File content retrieved successfully');
+        } catch (error) {
+            logger.error(`Failed to fetch file content: ${error.message}`);
+            return sendError(res, `Failed to fetch file: ${error.message}`, 500);
+        }
+    } else if (review.source === 'text' || review.source === 'file') {
+        // For single file reviews, return the stored code
+        const fileIssues = [];
+
+        // Collect all issues
+        if (review.bugs) {
+            review.bugs.forEach(bug => {
+                fileIssues.push({
+                    line: bug.line || 1,
+                    column: 0,
+                    message: bug.description,
+                    title: bug.title,
+                    code: bug.code,
+                    suggestion: bug.suggestion,
+                    severity: bug.severity || 'warning',
+                    type: 'bug',
+                });
+            });
+        }
+
+        if (review.security) {
+            review.security.forEach(issue => {
+                fileIssues.push({
+                    line: issue.line || 1,
+                    column: 0,
+                    message: issue.description,
+                    title: issue.title,
+                    code: issue.code,
+                    suggestion: issue.suggestion,
+                    severity: issue.severity || 'critical',
+                    type: 'security',
+                });
+            });
+        }
+
+        if (review.performance) {
+            review.performance.forEach(issue => {
+                fileIssues.push({
+                    line: issue.line || 1,
+                    column: 0,
+                    message: issue.description,
+                    title: issue.title,
+                    code: issue.code,
+                    suggestion: issue.suggestion,
+                    severity: issue.severity || 'info',
+                    type: 'performance',
+                });
+            });
+        }
+
+        fileIssues.sort((a, b) => a.line - b.line);
+
+        const response = {
+            code: review.code,
+            filePath: review.fileName,
+            language: review.language,
+            issues: fileIssues,
+            metadata: {
+                scanId: review._id,
+                fileName: review.fileName,
+                totalIssues: fileIssues.length,
+            },
+        };
+
+        sendSuccess(res, response, 'File content retrieved successfully');
+    } else {
+        return sendError(res, 'Unsupported review source', 400);
+    }
+});

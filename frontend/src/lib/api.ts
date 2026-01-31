@@ -224,6 +224,18 @@ class ApiClient {
         }, true);
     }
 
+    /**
+     * Get file content with issues for annotated code view
+     * @param scanId - Review/scan ID
+     * @param filePath - File path to fetch
+     * @returns File content with issues
+     */
+    async getFileWithIssues(scanId: string, filePath: string) {
+        return this.request(`/review/${scanId}/file?path=${encodeURIComponent(filePath)}`, {
+            method: 'GET',
+        }, true);
+    }
+
     // Download report as text file
     async downloadReport(reviewId: string): Promise<Blob> {
         const token = this.getToken();
