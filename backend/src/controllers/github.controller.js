@@ -105,19 +105,28 @@ exports.handleCallback = asyncHandler(async (req, res) => {
 exports.getRepos = asyncHandler(async (req, res) => {
     const userId = req.user._id;
     
+    logger.info(`Fetching repos for user: ${req.user.email} (${userId})`);
+    
     // Get all repos from database (includes both OAuth and URL-added repos)
     const dbRepos = await Repo.find({ userId }).sort({ createdAt: -1 });
+    
+    logger.info(`Found ${dbRepos.length} repos in database for user ${req.user.email}`);
     
     // Check if GitHub is connected
     const accessToken = await githubService.getGitHubToken(userId);
     
     if (!accessToken) {
         // No GitHub OAuth connection - return only URL-added repos from database
+        logger.info(`No GitHub OAuth for user ${req.user.email}, returning ${dbRepos.length} repos from database`);
         return sendSuccess(res, dbRepos, 'Repositories fetched successfully');
     }
     
+    logger.info(`User ${req.user.email} has GitHub OAuth, fetching repos from GitHub API`);
+    
     // GitHub is connected - fetch OAuth repos from GitHub API
     const githubRepos = await githubService.fetchUserRepos(accessToken);
+    
+    logger.info(`Fetched ${githubRepos.length} repos from GitHub API for user ${req.user.email}`);
     
     // Store/update OAuth repos in database
     for (const repo of githubRepos) {
@@ -148,6 +157,8 @@ exports.getRepos = asyncHandler(async (req, res) => {
     
     // Fetch all repos again from database (now includes updated OAuth repos + URL repos)
     const allRepos = await Repo.find({ userId }).sort({ createdAt: -1 });
+    
+    logger.info(`Returning ${allRepos.length} total repos for user ${req.user.email}`);
     
     sendSuccess(res, allRepos, 'Repositories fetched successfully');
 });
@@ -961,12 +972,20 @@ exports.addRepoByUrl = asyncHandler(async (req, res) => {
             userId: req.user._id,
             repoName: repo,
             repoFullName: repoData.full_name,
+            name: repoData.name,
+            full_name: repoData.full_name,
             repoUrl: repoData.html_url,
+            html_url: repoData.html_url,
             defaultBranch: branch || repoData.default_branch,
+            default_branch: branch || repoData.default_branch,
             isPrivate: false,
+            private: false,
             language: repoData.language,
             description: repoData.description,
             source: 'public-url', // Mark as public URL added repository
+            stargazers_count: repoData.stargazers_count || 0,
+            watchers_count: repoData.watchers_count || 0,
+            forks_count: repoData.forks_count || 0,
         };
 
         // Save repository to database

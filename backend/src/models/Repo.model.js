@@ -12,6 +12,10 @@ const repoSchema = new mongoose.Schema({
         required: true,
         index: true,
     },
+    repoId: {
+        type: String, // GitHub repo ID (for OAuth repos)
+        sparse: true,
+    },
     repoName: {
         type: String,
         required: true,
@@ -20,13 +24,25 @@ const repoSchema = new mongoose.Schema({
         type: String,
         required: true,
     },
+    name: {
+        type: String, // Short repo name (for consistency with GitHub API)
+    },
+    full_name: {
+        type: String, // Full repo name owner/repo (for consistency with GitHub API)
+    },
     repoUrl: {
         type: String,
         required: true,
     },
+    html_url: {
+        type: String, // GitHub URL (for consistency with GitHub API)
+    },
     defaultBranch: {
         type: String,
         default: 'main',
+    },
+    default_branch: {
+        type: String, // For consistency with GitHub API
     },
     lastAnalyzedBranch: {
         type: String,
@@ -42,11 +58,32 @@ const repoSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
     },
+    private: {
+        type: Boolean, // For consistency with GitHub API
+        default: false,
+    },
     language: {
         type: String,
     },
     description: {
         type: String,
+    },
+    source: {
+        type: String,
+        enum: ['github', 'public-url'],
+        default: 'github',
+    },
+    stargazers_count: {
+        type: Number,
+        default: 0,
+    },
+    watchers_count: {
+        type: Number,
+        default: 0,
+    },
+    forks_count: {
+        type: Number,
+        default: 0,
     },
     createdAt: {
         type: Date,
