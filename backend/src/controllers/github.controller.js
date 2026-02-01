@@ -846,3 +846,118 @@ exports.analyzeRepoFileByFile = asyncHandler(async (req, res) => {
         sendError(res, error.message || 'Failed to analyze repository', 500);
     }
 });
+
+/**
+ * @route   POST /api/github/add-repo-url
+ * @desc    Add a public GitHub repository by URL
+ * @access  Private
+ */
+exports.addRepoByUrl = asyncHandler(async (req, res) => {
+    const { repoUrl, branch } = req.body;
+
+    if (!repoUrl) {
+        return sendError(res, 'Repository URL is required', 400);
+    }
+
+    logger.info(`Adding repository by URL: ${repoUrl} for user ${req.user.email}`);
+
+    // Parse GitHub URL
+    // Supports formats: 
+    // - https://github.com/owner/repo
+    // - https://github.com/owner/repo.git
+    // - github.com/owner/repo
+    const githubUrlRegex = /(?:https?:\/\/)?(?:www\.)?github\.com\/([^\/]+)\/([^\/\.]+)(?:\.git)?/i;
+    const match = repoUrl.match(githubUrlRegex);
+
+    if (!match) {
+        return sendError(res, 'Invalid GitHub repository URL. Expected format: https://github.com/owner/repo', 400);
+    }
+
+    const owner = match[1];
+    const repo = match[2];
+    const repoFullName = `${owner}/${repo}`;
+
+    logger.info(`Parsed repository: ${repoFullName}`);
+
+    try {
+        // Fetch repository information from GitHub API (public access)
+        const axios = require('axios');
+        const githubClient = axios.create({
+            baseURL: 'https://api.github.com',
+            headers: {
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'AI-Code-Reviewer',
+            },
+        });
+
+        logger.info(`Fetching public repository info from GitHub: ${owner}/${repo}`);
+
+        const repoResponse = await githubClient.get(`/repos/${owner}/${repo}`);
+        const repoData = repoResponse.data;
+
+        // Check if repository is public
+        if (repoData.private) {
+            return sendError(res, 'This repository is private. Please use GitHub OAuth to add private repositories.', 403);
+        }
+
+        // Check for duplicate - prevent adding same repo twice
+        const existingRepo = await Repo.findOne({
+            userId: req.user._id,
+            repoFullName: repoData.full_name,
+        });
+
+        if (existingRepo) {
+            logger.info(`Repository ${repoFullName} already exists for user ${req.user.email}`);
+            return sendSuccess(
+                res,
+                {
+                    repo: existingRepo,
+                    alreadyExists: true,
+                },
+                'Repository already exists in your list'
+            );
+        }
+
+        // Extract repository metadata
+        const repoMetadata = {
+            userId: req.user._id,
+            repoName: repo,
+            repoFullName: repoData.full_name,
+            repoUrl: repoData.html_url,
+            defaultBranch: branch || repoData.default_branch,
+            isPrivate: false,
+            language: repoData.language,
+            description: repoData.description,
+            source: 'public-url', // Mark as public URL added repository
+        };
+
+        // Save repository to database
+        const savedRepo = await Repo.create(repoMetadata);
+
+        logger.info(`Public repository ${repoFullName} successfully added for user ${req.user.email}`);
+
+        sendSuccess(
+            res,
+            {
+                repo: savedRepo,
+                alreadyExists: false,
+            },
+            'Repository added successfully'
+        );
+
+    } catch (error) {
+        logger.error(`Failed to add repository ${repoFullName}: ${error.message}`);
+
+        // Handle specific GitHub API errors
+        if (error.response?.status === 404) {
+            return sendError(res, 'Repository not found. Please check the URL and try again.', 404);
+        }
+
+        if (error.response?.status === 403) {
+            return sendError(res, 'Access denied. This may be a private repository or rate limit exceeded.', 403);
+        }
+
+        return sendError(res, `Failed to add repository: ${error.message}`, 500);
+    }
+});
+

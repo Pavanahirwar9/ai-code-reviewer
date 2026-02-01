@@ -187,6 +187,13 @@ class ApiClient {
         }, true);
     }
 
+    async addRepoByUrl(repoUrl: string, branch?: string) {
+        return this.request('/github/add-repo-url', {
+            method: 'POST',
+            body: JSON.stringify({ repoUrl, branch }),
+        }, true);
+    }
+
     async getGitHubRepoBranches(owner: string, repo: string) {
         return this.request(`/github/repos/${owner}/${repo}/branches`, {
             method: 'GET',

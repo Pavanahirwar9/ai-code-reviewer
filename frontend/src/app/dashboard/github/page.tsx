@@ -87,6 +87,7 @@ export default function GitHubIntegrationPage() {
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pollingScanId, setPollingScanId] = useState<string | null>(null);
+  const [isAddingRepo, setIsAddingRepo] = useState(false);
 
   // Check GitHub connection status on load
   useEffect(() => {
@@ -318,13 +319,26 @@ export default function GitHubIntegrationPage() {
     }
   };
 
-  const handleAddRepo = () => {
-    if (!repoUrl) {
+  const handleAddRepo = async () => {
+    if (!repoUrl.trim()) {
       toast.error("Please enter a repository URL");
       return;
     }
-    toast.success("Repository added successfully!");
-    setRepoUrl("");
+
+    setIsAddingRepo(true);
+    try {
+      const result = await api.addRepoByUrl(repoUrl.trim());
+      toast.success(result.message || "Repository added successfully!");
+      setRepoUrl("");
+      
+      // Refresh repos list to include the newly added repo
+      await fetchRepos();
+    } catch (error: any) {
+      console.error('Add repo error:', error);
+      toast.error(error.response?.data?.message || 'Failed to add repository');
+    } finally {
+      setIsAddingRepo(false);
+    }
   };
 
   if (isLoading) {
@@ -530,9 +544,18 @@ export default function GitHubIntegrationPage() {
                     Enter the full URL of a public GitHub repository.
                   </p>
                 </div>
-                <Button onClick={handleAddRepo} className="h-12 gap-2">
-                  <Link2 className="h-4 w-4" />
-                  Add Repository
+                <Button onClick={handleAddRepo} className="h-12 gap-2" disabled={isAddingRepo}>
+                  {isAddingRepo ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="h-4 w-4" />
+                      Add Repository
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>
