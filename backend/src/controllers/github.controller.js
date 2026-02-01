@@ -103,15 +103,53 @@ exports.handleCallback = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.getRepos = asyncHandler(async (req, res) => {
-    const accessToken = await githubService.getGitHubToken(req.user._id);
-
+    const userId = req.user._id;
+    
+    // Get all repos from database (includes both OAuth and URL-added repos)
+    const dbRepos = await Repo.find({ userId }).sort({ createdAt: -1 });
+    
+    // Check if GitHub is connected
+    const accessToken = await githubService.getGitHubToken(userId);
+    
     if (!accessToken) {
-        return sendError(res, 'GitHub not connected. Please connect your GitHub account first.', 401);
+        // No GitHub OAuth connection - return only URL-added repos from database
+        return sendSuccess(res, dbRepos, 'Repositories fetched successfully');
     }
-
-    const repos = await githubService.fetchUserRepos(accessToken);
-
-    sendSuccess(res, repos, 'Repositories fetched successfully');
+    
+    // GitHub is connected - fetch OAuth repos from GitHub API
+    const githubRepos = await githubService.fetchUserRepos(accessToken);
+    
+    // Store/update OAuth repos in database
+    for (const repo of githubRepos) {
+        await Repo.findOneAndUpdate(
+            {
+                userId: userId,
+                repoId: repo.id.toString(),
+                source: 'github'
+            },
+            {
+                userId: userId,
+                repoId: repo.id.toString(),
+                name: repo.name,
+                full_name: repo.full_name,
+                description: repo.description,
+                html_url: repo.html_url,
+                language: repo.language,
+                default_branch: repo.default_branch || 'main',
+                private: repo.private,
+                stargazers_count: repo.stargazers_count,
+                watchers_count: repo.watchers_count,
+                forks_count: repo.forks_count,
+                source: 'github'
+            },
+            { upsert: true, new: true }
+        );
+    }
+    
+    // Fetch all repos again from database (now includes updated OAuth repos + URL repos)
+    const allRepos = await Repo.find({ userId }).sort({ createdAt: -1 });
+    
+    sendSuccess(res, allRepos, 'Repositories fetched successfully');
 });
 
 /**
