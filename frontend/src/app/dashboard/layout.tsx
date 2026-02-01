@@ -32,6 +32,7 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
+  FolderGit2,
 } from "lucide-react";
 
 // Backend base URL (without /api) for static assets like avatars
@@ -42,6 +43,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/review", label: "New Review", icon: FileCode },
   { href: "/dashboard/github", label: "GitHub Integration", icon: Github },
+  { href: "/dashboard/repositories", label: "Repositories", icon: FolderGit2 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 

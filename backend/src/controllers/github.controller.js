@@ -961,3 +961,32 @@ exports.addRepoByUrl = asyncHandler(async (req, res) => {
     }
 });
 
+/**
+ * Delete a repository from user's list
+ * DELETE /github/repos/:repoId
+ */
+exports.deleteRepo = asyncHandler(async (req, res) => {
+    try {
+        const { repoId } = req.params;
+        const userId = req.user.id;
+
+        // Find the repository
+        const repo = await Repo.findOne({
+            _id: repoId,
+            userId: userId
+        });
+
+        if (!repo) {
+            return sendError(res, 'Repository not found', 404);
+        }
+
+        // Delete the repository
+        await Repo.deleteOne({ _id: repoId, userId: userId });
+
+        return sendSuccess(res, null, 'Repository removed successfully');
+    } catch (error) {
+        logger.error('Delete repository error:', error);
+        return sendError(res, `Failed to remove repository: ${error.message}`, 500);
+    }
+});
+

@@ -20,6 +20,7 @@ const {
     getScans,
     getScan,
     addRepoByUrl,
+    deleteRepo,
 } = require('../controllers/github.controller');
 const { protect } = require('../middleware/auth.middleware');
 const { githubRepoValidation, validate } = require('../utils/validators');
@@ -34,6 +35,7 @@ router.use(protect);
 router.get('/status', getStatus);
 router.get('/repos', getRepos);
 router.get('/repos/:owner/:repo/branches', getBranches);
+router.delete('/repos/:repoId', deleteRepo);
 router.get('/scans', getScans);
 router.get('/scan/:scanId', getScan);
 router.post('/add-repo-url', addRepoByUrl);
