@@ -236,59 +236,6 @@ class ApiClient {
         }, true);
     }
 
-    /**
-     * Get file content for editing
-     * @param scanId - Review/scan ID
-     * @param filePath - File path to fetch
-     * @returns File content with issues for editing
-     */
-    async getFileForEdit(scanId: string, filePath: string) {
-        return this.request(`/review/${scanId}/file/edit?path=${encodeURIComponent(filePath)}`, {
-            method: 'GET',
-        }, true);
-    }
-
-    /**
-     * Update file content after editing
-     * @param scanId - Review/scan ID
-     * @param filePath - File path
-     * @param updatedCode - Updated code content
-     * @returns Success response
-     */
-    async updateFileContent(scanId: string, filePath: string, updatedCode: string) {
-        return this.request('/review/file/update', {
-            method: 'PUT',
-            body: JSON.stringify({ scanId, filePath, updatedCode }),
-        }, true);
-    }
-
-    /**
-     * Re-analyze file after editing
-     * @param scanId - Review/scan ID
-     * @param filePath - File path
-     * @returns Analysis results with updated issues
-     */
-    async reanalyzeFile(scanId: string, filePath: string) {
-        return this.request('/review/file/reanalyze', {
-            method: 'POST',
-            body: JSON.stringify({ scanId, filePath }),
-        }, true);
-    }
-
-    /**
-     * Commit edited file back to GitHub
-     * @param scanId - Review/scan ID
-     * @param filePath - File path
-     * @param commitMessage - Optional commit message
-     * @returns Commit response with URL
-     */
-    async commitToGitHub(scanId: string, filePath: string, commitMessage?: string) {
-        return this.request('/review/file/commit', {
-            method: 'POST',
-            body: JSON.stringify({ scanId, filePath, commitMessage }),
-        }, true);
-    }
-
     // Download report as text file
     async downloadReport(reviewId: string): Promise<Blob> {
         const token = this.getToken();
