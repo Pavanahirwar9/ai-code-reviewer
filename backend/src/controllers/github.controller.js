@@ -103,64 +103,15 @@ exports.handleCallback = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.getRepos = asyncHandler(async (req, res) => {
-    const userId = req.user._id;
-    
-    logger.info(`Fetching repos for user: ${req.user.email} (${userId})`);
-    
-    // Get all repos from database (includes both OAuth and URL-added repos)
-    const dbRepos = await Repo.find({ userId }).sort({ createdAt: -1 });
-    
-    logger.info(`Found ${dbRepos.length} repos in database for user ${req.user.email}`);
-    
-    // Check if GitHub is connected
-    const accessToken = await githubService.getGitHubToken(userId);
-    
+    const accessToken = await githubService.getGitHubToken(req.user._id);
+
     if (!accessToken) {
-        // No GitHub OAuth connection - return only URL-added repos from database
-        logger.info(`No GitHub OAuth for user ${req.user.email}, returning ${dbRepos.length} repos from database`);
-        return sendSuccess(res, dbRepos, 'Repositories fetched successfully');
+        return sendError(res, 'GitHub not connected. Please connect your GitHub account first.', 401);
     }
-    
-    logger.info(`User ${req.user.email} has GitHub OAuth, fetching repos from GitHub API`);
-    
-    // GitHub is connected - fetch OAuth repos from GitHub API
-    const githubRepos = await githubService.fetchUserRepos(accessToken);
-    
-    logger.info(`Fetched ${githubRepos.length} repos from GitHub API for user ${req.user.email}`);
-    
-    // Store/update OAuth repos in database
-    for (const repo of githubRepos) {
-        await Repo.findOneAndUpdate(
-            {
-                userId: userId,
-                repoId: repo.id.toString(),
-                source: 'github'
-            },
-            {
-                userId: userId,
-                repoId: repo.id.toString(),
-                name: repo.name,
-                full_name: repo.full_name,
-                description: repo.description,
-                html_url: repo.html_url,
-                language: repo.language,
-                default_branch: repo.default_branch || 'main',
-                private: repo.private,
-                stargazers_count: repo.stargazers_count,
-                watchers_count: repo.watchers_count,
-                forks_count: repo.forks_count,
-                source: 'github'
-            },
-            { upsert: true, new: true }
-        );
-    }
-    
-    // Fetch all repos again from database (now includes updated OAuth repos + URL repos)
-    const allRepos = await Repo.find({ userId }).sort({ createdAt: -1 });
-    
-    logger.info(`Returning ${allRepos.length} total repos for user ${req.user.email}`);
-    
-    sendSuccess(res, allRepos, 'Repositories fetched successfully');
+
+    const repos = await githubService.fetchUserRepos(accessToken);
+
+    sendSuccess(res, repos, 'Repositories fetched successfully');
 });
 
 /**
@@ -972,20 +923,11 @@ exports.addRepoByUrl = asyncHandler(async (req, res) => {
             userId: req.user._id,
             repoName: repo,
             repoFullName: repoData.full_name,
-            name: repoData.name,
-            full_name: repoData.full_name,
             repoUrl: repoData.html_url,
-            html_url: repoData.html_url,
             defaultBranch: branch || repoData.default_branch,
-            default_branch: branch || repoData.default_branch,
             isPrivate: false,
-            private: false,
             language: repoData.language,
             description: repoData.description,
-            source: 'public-url', // Mark as public URL added repository
-            stargazers_count: repoData.stargazers_count || 0,
-            watchers_count: repoData.watchers_count || 0,
-            forks_count: repoData.forks_count || 0,
         };
 
         // Save repository to database
