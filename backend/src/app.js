@@ -21,6 +21,7 @@ const reviewRoutes = require('./routes/review.routes');
 const githubRoutes = require('./routes/github.routes');
 const userRoutes = require('./routes/user.routes');
 const publicReviewRoutes = require('./routes/review-public.routes');
+const editorRoutes = require('./routes/editor.routes');
 
 const app = express();
 
@@ -105,6 +106,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/review', reviewRoutes);
 app.use('/api/github', githubRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/editor', editorRoutes);
 
 // Root endpoint
 app.get('/api', (req, res) => {

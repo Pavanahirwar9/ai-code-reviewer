@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import AnnotatedCodeViewer from "@/components/code-viewer/AnnotatedCodeViewer";
 import IssueDetailPanel from "@/components/code-viewer/IssueDetailPanel";
-import { ArrowLeft, FileCode, Loader2, AlertCircle } from "lucide-react";
+import { ArrowLeft, FileCode, Loader2, AlertCircle, Edit } from "lucide-react";
 import { toast } from "sonner";
 
 interface CodeIssue {
@@ -56,6 +56,7 @@ export default function AnnotatedCodeReviewPage() {
   const [selectedIssue, setSelectedIssue] = useState<CodeIssue | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCreatingEditor, setIsCreatingEditor] = useState(false);
 
   // Extract id and filePath from params
   const scanId = params?.id as string;
@@ -92,6 +93,34 @@ export default function AnnotatedCodeReviewPage() {
 
     fetchFileData();
   }, [scanId, filePath]);
+
+  // Handle Edit Code button
+  const handleEditCode = async () => {
+    if (!fileData) return;
+
+    setIsCreatingEditor(true);
+    try {
+      const response = await api.createEditorFileFromScan(
+        scanId,
+        fileData.filePath,
+        fileData.code,
+        fileData.language,
+        fileData.issues
+      );
+
+      if (response.success && response.data?.fileId) {
+        // Navigate to editor
+        router.push(`/dashboard/editor/${response.data.fileId}`);
+      } else {
+        toast.error(response.error || 'Failed to open editor');
+      }
+    } catch (error) {
+      console.error('Error opening editor:', error);
+      toast.error('Failed to open editor');
+    } finally {
+      setIsCreatingEditor(false);
+    }
+  };
 
   // Loading state
   if (loading) {
@@ -205,13 +234,29 @@ export default function AnnotatedCodeReviewPage() {
         <div className="xl:col-span-3">
           <AnnotatedCodeViewer
             code={fileData.code}
-            issues={fileData.issues}
-            language={fileData.language}
-            filePath={fileData.filePath}
-            onIssueClick={(issue) => setSelectedIssue(issue)}
-          />
-        </div>
-
+            issues={fileData.issues}between">
+        <Link href={`/dashboard/results/${scanId}`}>
+          <Button variant="outline">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Results
+          </Button>
+        </Link>
+        <Button 
+          onClick={handleEditCode}
+          disabled={isCreatingEditor}
+        >
+          {isCreatingEditor ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Opening Editor...
+            </>
+          ) : (
+            <>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Code
+            </>
+          )}
+        </Button
         {/* Issue Detail Panel (takes 1 column) */}
         <div className="xl:col-span-1">
           <div className="sticky top-4">

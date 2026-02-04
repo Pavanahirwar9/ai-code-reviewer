@@ -41,6 +41,7 @@ const generateReport = (review) => {
             analysisTime: review.analysisTime,
             overallScore: review.overallScore,
         },
+        code: review.code, // Include the actual code for editing
         statistics: {
             totalIssues,
             critical: criticalCount,

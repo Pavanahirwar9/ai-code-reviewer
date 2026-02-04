@@ -243,6 +243,49 @@ class ApiClient {
         }, true);
     }
 
+    // Editor endpoints
+    async getEditorFile(fileId: string) {
+        return this.request(`/editor/file/${fileId}`, {
+            method: 'GET',
+        }, true);
+    }
+
+    async updateEditorFile(fileId: string, updatedCode: string) {
+        return this.request(`/editor/file/${fileId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ updatedCode }),
+        }, true);
+    }
+
+    async reanalyzeFile(fileId: string) {
+        return this.request(`/editor/file/${fileId}/reanalyze`, {
+            method: 'POST',
+        }, true);
+    }
+
+    async uploadLocalFile(file: File) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const token = this.getToken();
+        const response = await fetch(`${this.baseURL}/editor/upload`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+            body: formData,
+        });
+
+        return response.json();
+    }
+
+    async createEditorFileFromScan(scanId: string, filePath: string, code: string, language: string, issues: any[]) {
+        return this.request('/editor/from-scan', {
+            method: 'POST',
+            body: JSON.stringify({ scanId, filePath, code, language, issues }),
+        }, true);
+    }
+
     // Download report as text file
     async downloadReport(reviewId: string): Promise<Blob> {
         const token = this.getToken();

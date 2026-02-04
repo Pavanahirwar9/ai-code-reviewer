@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,8 @@ import {
   AlertTriangle,
   XCircle,
   Code2,
+  Edit,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -235,9 +237,11 @@ function IssueCard({ issue }: { issue: Issue }) {
 
 export default function ResultsPage() {
   const params = useParams();
+  const router = useRouter();
   const [results, setResults] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [isCreatingEditor, setIsCreatingEditor] = useState(false);
 
   // Fetch review data from API
   useEffect(() => {
@@ -303,6 +307,39 @@ export default function ResultsPage() {
     }
   };
 
+  const handleEditCode = async () => {
+    if (!results) return;
+
+    setIsCreatingEditor(true);
+    try {
+      // Collect all issues from results
+      const allIssues = [
+        ...(results.issues?.bugs || []),
+        ...(results.issues?.security || []),
+        ...(results.issues?.performance || []),
+      ];
+
+      const response = await api.createEditorFileFromScan(
+        params.id as string,
+        results.summary?.fileName || 'untitled',
+        results.code || results.summary?.code || '',
+        results.summary?.language || 'text',
+        allIssues
+      );
+
+      if (response.success && response.data?.fileId) {
+        router.push(`/dashboard/editor/${response.data.fileId}`);
+      } else {
+        toast.error(response.error || 'Failed to open editor');
+      }
+    } catch (error) {
+      console.error('Error opening editor:', error);
+      toast.error('Failed to open editor');
+    } finally {
+      setIsCreatingEditor(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -361,10 +398,30 @@ export default function ResultsPage() {
             </p>
           </div>
         </div>
-        <Button onClick={handleDownloadPDF} disabled={downloading} className="gap-2">
-          <Download className="h-4 w-4" />
-          {downloading ? 'Downloading...' : 'Download Report (PDF)'}
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={handleEditCode} 
+            disabled={isCreatingEditor}
+            variant="default"
+            className="gap-2"
+          >
+            {isCreatingEditor ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Opening Editor...
+              </>
+            ) : (
+              <>
+                <Edit className="h-4 w-4" />
+                Edit Code
+              </>
+            )}
+          </Button>
+          <Button onClick={handleDownloadPDF} disabled={downloading} className="gap-2" variant="outline">
+            <Download className="h-4 w-4" />
+            {downloading ? 'Downloading...' : 'Download Report (PDF)'}
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
