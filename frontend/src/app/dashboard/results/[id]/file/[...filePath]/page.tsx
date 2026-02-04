@@ -234,29 +234,11 @@ export default function AnnotatedCodeReviewPage() {
         <div className="xl:col-span-3">
           <AnnotatedCodeViewer
             code={fileData.code}
-            issues={fileData.issues}between">
-        <Link href={`/dashboard/results/${scanId}`}>
-          <Button variant="outline">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Results
-          </Button>
-        </Link>
-        <Button 
-          onClick={handleEditCode}
-          disabled={isCreatingEditor}
-        >
-          {isCreatingEditor ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Opening Editor...
-            </>
-          ) : (
-            <>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit Code
-            </>
-          )}
-        </Button
+            issues={fileData.issues}
+            onIssueClick={setSelectedIssue}
+          />
+        </div>
+
         {/* Issue Detail Panel (takes 1 column) */}
         <div className="xl:col-span-1">
           <div className="sticky top-4">
