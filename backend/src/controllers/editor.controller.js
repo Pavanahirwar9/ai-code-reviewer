@@ -80,7 +80,7 @@ exports.updateEditorFile = asyncHandler(async (req, res) => {
     file.code = updatedCode;
     file.isEdited = true;
     file.editedAt = new Date();
-    
+
     await file.save();
 
     logger.info(`File ${fileId} updated successfully`);
@@ -100,6 +100,8 @@ exports.updateEditorFile = asyncHandler(async (req, res) => {
  */
 exports.reanalyzeFile = asyncHandler(async (req, res) => {
     const { fileId } = req.params;
+    // Accept current code from the request body (editor may have unsaved changes)
+    const { code: bodyCode } = req.body || {};
 
     logger.info(`Re-analyzing file ${fileId} for user ${req.user._id}`);
 
@@ -116,6 +118,16 @@ exports.reanalyzeFile = asyncHandler(async (req, res) => {
         return sendError(res, 'Unauthorized access to this file', 403);
     }
 
+    // Use the code sent from the editor (latest, possibly unsaved) if provided
+    if (bodyCode && typeof bodyCode === 'string' && bodyCode.trim().length > 0) {
+        file.code = bodyCode;
+        file.isEdited = true;
+        file.editedAt = new Date();
+        // Persist the update so subsequent loads get the correct code
+        await file.save();
+        logger.info(`File ${fileId} code updated from editor before re-analysis`);
+    }
+
     try {
         const issues = [];
         const startTime = Date.now();
@@ -124,15 +136,21 @@ exports.reanalyzeFile = asyncHandler(async (req, res) => {
         if (['javascript', 'typescript', 'jsx', 'tsx'].includes(file.language)) {
             logger.info(`Running ESLint on file ${fileId}`);
             const lintResults = await runESLint(file.code, file.language);
-            
+
             lintResults.forEach(issue => {
                 issues.push({
-                    line: issue.line,
-                    column: issue.column,
-                    message: issue.message,
-                    severity: issue.severity === 2 ? 'error' : 'warning',
-                    rule: issue.ruleId,
+                    line: issue.line || 1,
+                    column: issue.column || 0,
+                    // lint.service returns title/description, not message
+                    message: issue.title || issue.description || issue.message || 'ESLint issue',
+                    severity: mapSeverity(issue.severity),
+                    rule: issue.ruleId || issue.id,
                     source: 'eslint',
+                    title: issue.title || null,
+                    suggestion: issue.suggestion || null,
+                    originalCode: issue.code || null,
+                    howToFix: [],
+                    fixed: false,
                 });
             });
         }
@@ -140,78 +158,63 @@ exports.reanalyzeFile = asyncHandler(async (req, res) => {
         // Run security pattern analysis
         logger.info(`Running security analysis on file ${fileId}`);
         const securityIssues = await analyzeSecurityPatterns(file.code, file.language);
-        
+
         securityIssues.forEach(issue => {
             issues.push({
-                line: issue.line,
+                line: issue.line || 1,
                 column: issue.column || 0,
-                message: issue.message,
+                // lint.service returns description/title, not message
+                message: issue.description || issue.title || issue.message || 'Security issue',
                 severity: 'security',
-                rule: issue.rule,
+                rule: issue.id || issue.rule,
                 source: 'security',
+                title: issue.title || null,
+                suggestion: issue.suggestion || null,
+                originalCode: issue.code || null,
+                howToFix: [],
+                fixed: false,
             });
         });
 
         // Run AI analysis
         logger.info(`Running AI analysis on file ${fileId}`);
         const aiReview = await reviewCode(file.code, file.language);
-        
+
         // Process AI review results (bugs, security, performance, suggestions)
         if (aiReview) {
+            // Helper to map AI issue into EditorFile issue format (preserves fix fields)
+            const mapAiIssue = (issue, defaultSeverity) => ({
+                line: issue.line || 1,
+                column: 0,
+                message: issue.description || issue.title || issue.message || 'No description provided',
+                severity: defaultSeverity || mapSeverity(issue.severity),
+                rule: issue.id || issue.rule,
+                source: 'ai',
+                title: issue.title || null,
+                suggestion: issue.suggestion || null,
+                originalCode: issue.code || issue.originalCode || null,
+                howToFix: Array.isArray(issue.howToFix) ? issue.howToFix : [],
+                fixed: false,
+            });
+
             // Add bugs
             if (aiReview.bugs && Array.isArray(aiReview.bugs)) {
-                aiReview.bugs.forEach(issue => {
-                    issues.push({
-                        line: issue.line || 1,
-                        column: 0,
-                        message: issue.description || issue.message,
-                        severity: issue.severity === 'critical' ? 'error' : (issue.severity === 'warning' ? 'warning' : 'info'),
-                        rule: issue.id || issue.rule,
-                        source: 'ai',
-                    });
-                });
+                aiReview.bugs.forEach(issue => issues.push(mapAiIssue(issue, null)));
             }
 
             // Add security issues
             if (aiReview.security && Array.isArray(aiReview.security)) {
-                aiReview.security.forEach(issue => {
-                    issues.push({
-                        line: issue.line || 1,
-                        column: 0,
-                        message: issue.description || issue.message,
-                        severity: 'security',
-                        rule: issue.id || issue.rule,
-                        source: 'ai',
-                    });
-                });
+                aiReview.security.forEach(issue => issues.push(mapAiIssue(issue, 'security')));
             }
 
             // Add performance issues
             if (aiReview.performance && Array.isArray(aiReview.performance)) {
-                aiReview.performance.forEach(issue => {
-                    issues.push({
-                        line: issue.line || 1,
-                        column: 0,
-                        message: issue.description || issue.message,
-                        severity: 'info',
-                        rule: issue.id || issue.rule,
-                        source: 'ai',
-                    });
-                });
+                aiReview.performance.forEach(issue => issues.push(mapAiIssue(issue, 'info')));
             }
 
             // Add suggestions
             if (aiReview.suggestions && Array.isArray(aiReview.suggestions)) {
-                aiReview.suggestions.forEach(issue => {
-                    issues.push({
-                        line: issue.line || 1,
-                        column: 0,
-                        message: issue.description || issue.message,
-                        severity: 'info',
-                        rule: issue.id || issue.rule,
-                        source: 'ai',
-                    });
-                });
+                aiReview.suggestions.forEach(issue => issues.push(mapAiIssue(issue, 'info')));
             }
         }
 
@@ -272,41 +275,76 @@ exports.uploadLocalFile = asyncHandler(async (req, res) => {
         // Run initial analysis
         const issues = [];
 
+        // Helper to map an AI issue preserving all fix fields
+        const mapAiIssueUpload = (issue, defaultSeverity) => ({
+            line: issue.line || 1,
+            column: 0,
+            message: issue.description || issue.title || issue.message || 'No description provided',
+            severity: defaultSeverity || mapSeverity(issue.severity),
+            rule: issue.id || issue.rule,
+            source: 'ai',
+            title: issue.title || null,
+            suggestion: issue.suggestion || null,
+            originalCode: issue.code || issue.originalCode || null,
+            howToFix: Array.isArray(issue.howToFix) ? issue.howToFix : [],
+            fixed: false,
+        });
+
         // Run ESLint analysis
         if (['javascript', 'typescript', 'jsx', 'tsx'].includes(language)) {
             const lintResults = await runESLint(code, language);
-            
+
             lintResults.forEach(issue => {
                 issues.push({
-                    line: issue.line,
-                    column: issue.column,
-                    message: issue.message,
-                    severity: issue.severity === 2 ? 'error' : 'warning',
-                    rule: issue.ruleId,
+                    line: issue.line || 1,
+                    column: issue.column || 0,
+                    message: issue.title || issue.description || issue.message || 'ESLint issue',
+                    severity: mapSeverity(issue.severity),
+                    rule: issue.ruleId || issue.id,
                     source: 'eslint',
+                    title: issue.title || null,
+                    suggestion: issue.suggestion || null,
+                    originalCode: issue.code || null,
+                    howToFix: [],
+                    fixed: false,
                 });
             });
         }
 
         // Run security analysis
         const securityIssues = await analyzeSecurityPatterns(code, language);
-        
+
         securityIssues.forEach(issue => {
             issues.push({
-                line: issue.line,
+                line: issue.line || 1,
                 column: issue.column || 0,
-                message: issue.message,
+                message: issue.description || issue.title || issue.message || 'Security issue',
                 severity: 'security',
-                rule: issue.rule,
+                rule: issue.id || issue.rule,
                 source: 'security',
+                title: issue.title || null,
+                suggestion: issue.suggestion || null,
+                originalCode: issue.code || null,
+                howToFix: [],
+                fixed: false,
             });
         });
+
+        // Run AI analysis — fills in title, suggestion, howToFix
+        logger.info(`Running AI analysis on uploaded file ${originalname}`);
+        const aiReview = await reviewCode(code, language, originalname);
+        if (aiReview) {
+            (aiReview.bugs || []).forEach(i => issues.push(mapAiIssueUpload(i, null)));
+            (aiReview.security || []).forEach(i => issues.push(mapAiIssueUpload(i, 'security')));
+            (aiReview.performance || []).forEach(i => issues.push(mapAiIssueUpload(i, 'info')));
+            (aiReview.suggestions || []).forEach(i => issues.push(mapAiIssueUpload(i, 'info')));
+        }
 
         // Update with issues
         editorFile.issues = issues;
         await editorFile.save();
 
-        logger.info(`Local file uploaded successfully: ${editorFile._id}`);
+        logger.info(`Local file uploaded successfully: ${editorFile._id}, issues: ${issues.length}`);
 
         return sendSuccess(res, {
             fileId: editorFile._id,
@@ -357,6 +395,12 @@ exports.createFromScan = asyncHandler(async (req, res) => {
             severity: mapSeverity(issue.severity),
             rule: issue.id || issue.rule,
             source: 'ai', // Valid enum: 'eslint', 'ai', 'security'
+            // Preserve AI suggestion fields for "Apply Fix" feature
+            title: issue.title || null,
+            suggestion: issue.suggestion || null,
+            originalCode: issue.code || issue.originalCode || null,
+            howToFix: Array.isArray(issue.howToFix) ? issue.howToFix : [],
+            fixed: false,
         }));
 
         // Create new EditorFile
@@ -388,7 +432,7 @@ exports.createFromScan = asyncHandler(async (req, res) => {
  */
 function mapSeverity(severity) {
     if (!severity) return 'info';
-    
+
     const sev = severity.toLowerCase();
     if (sev === 'critical' || sev === 'error') return 'error';
     if (sev === 'warning') return 'warning';
@@ -416,7 +460,7 @@ const upload = multer({
         ];
 
         const ext = path.extname(file.originalname).toLowerCase();
-        
+
         if (allowedExtensions.includes(ext)) {
             cb(null, true);
         } else {

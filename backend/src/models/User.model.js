@@ -38,7 +38,7 @@ const userSchema = new mongoose.Schema({
     githubId: {
         type: String,
         unique: true,
-        sparse: true, // Allow null values
+        sparse: true,
     },
     githubUsername: {
         type: String,
@@ -46,10 +46,28 @@ const userSchema = new mongoose.Schema({
     avatar: {
         type: String,
     },
+    github: {
+        id: { type: String },
+        username: { type: String },
+        accessToken: { type: String },
+        avatarUrl: { type: String },
+        profileUrl: { type: String },
+        connectedAt: { type: Date },
+    },
+    google: {
+        id: { type: String },
+        email: { type: String },
+        name: { type: String },
+        picture: { type: String },
+        accessToken: { type: String },
+        connectedAt: { type: Date },
+    },
     isEmailVerified: {
         type: Boolean,
         default: false,
     },
+    emailVerificationToken: String,
+    emailVerificationExpire: Date,
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     createdAt: {
@@ -91,8 +109,10 @@ userSchema.methods.getPublicProfile = function () {
         name: this.name,
         email: this.email,
         role: this.role,
-        githubUsername: this.githubUsername,
-        avatar: this.avatar,
+        githubUsername: this.github?.username || this.githubUsername,
+        avatar: this.google?.picture || this.github?.avatarUrl || this.avatar,
+        githubConnected: !!(this.github?.accessToken),
+        googleConnected: !!(this.google?.id),
         createdAt: this.createdAt,
     };
 };

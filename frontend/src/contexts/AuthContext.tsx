@@ -57,7 +57,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 return true;
             }
 
-            // Show error message if login failed
+            // Email not verified — throw special error so login page can show resend UI
+            if (response.data?.emailNotVerified) {
+                const err: any = new Error(response.error || 'Please verify your email before logging in.');
+                err.emailNotVerified = true;
+                err.email = response.data.email;
+                throw err;
+            }
+
             if (response.error) {
                 throw new Error(response.error);
             }
@@ -74,13 +81,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const response = await api.register(name, email, password);
 
             if (response.success && response.data) {
-                localStorage.setItem('token', response.data.token);
-                localStorage.setItem('user', JSON.stringify(response.data.user));
-                setUser(response.data.user);
+                // If registration requires email verification, don't log in yet
+                if (response.data.needsVerification) {
+                    const err: any = new Error('Account created! Please verify your email.');
+                    err.needsVerification = true;
+                    err.email = response.data.email;
+                    throw err;
+                }
+                // Direct login (e.g. admin or OAuth)
+                if (response.data.token) {
+                    localStorage.setItem('token', response.data.token);
+                    localStorage.setItem('user', JSON.stringify(response.data.user));
+                    setUser(response.data.user);
+                }
                 return true;
             }
 
-            // Show error message if registration failed
             if (response.error) {
                 throw new Error(response.error);
             }

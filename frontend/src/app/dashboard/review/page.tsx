@@ -199,9 +199,32 @@ export default function CodeReviewPage() {
         // Store review data in sessionStorage for immediate access
         sessionStorage.setItem('latestReview', JSON.stringify(result.data));
 
-        toast.success("Analysis complete! Redirecting to results...");
+        toast.success("Analysis complete! Opening in editor…");
 
-        // Redirect to results page with the review ID
+        // Collect issues — data is nested under reviewData.issues.*
+        const reviewData = result.data;
+        const issueBugs = reviewData.issues?.bugs || reviewData.bugs || [];
+        const issueSecurity = reviewData.issues?.security || reviewData.security || [];
+        const issuePerf = reviewData.issues?.performance || reviewData.performance || [];
+        const allIssues = [...issueBugs, ...issueSecurity, ...issuePerf];
+
+        try {
+          const editorRes = await api.createEditorFileFromScan(
+            reviewId,
+            reviewData.summary?.fileName || reviewData.fileName || fileName || 'untitled',
+            reviewData.code || code,
+            reviewData.summary?.language || reviewData.language || language || 'text',
+            allIssues,
+          );
+          if (editorRes?.success && editorRes?.data?.fileId) {
+            setTimeout(() => {
+              router.push(`/dashboard/editor/${editorRes.data.fileId}`);
+            }, 800);
+            return;
+          }
+        } catch (_) { /* fall through to results page */ }
+
+        // Fallback: redirect to results page with the review ID
         setTimeout(() => {
           router.push(`/dashboard/results/${reviewId}`);
         }, 1000);
@@ -495,7 +518,7 @@ export default function CodeReviewPage() {
                 </div>
                 <div className="pt-2 border-t border-border">
                   <p className="text-sm text-muted-foreground">
-                    {code.split("\n").length} lines • {code.length} characters
+                    {code.split("\n").length} lines \u2022 {code.length} characters
                   </p>
                 </div>
               </div>

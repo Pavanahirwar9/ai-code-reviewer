@@ -78,6 +78,7 @@ export default function GitHubIntegrationPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [githubUsername, setGithubUsername] = useState("");
+  const [githubAvatarUrl, setGithubAvatarUrl] = useState("");
   const [repos, setRepos] = useState<any[]>([]);
   const [repoUrl, setRepoUrl] = useState("");
   const [selectedRepo, setSelectedRepo] = useState("");
@@ -86,8 +87,9 @@ export default function GitHubIntegrationPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [pollingScanId, setPollingScanId] = useState<string | null>(null);
   const [isAddingRepo, setIsAddingRepo] = useState(false);
+  const [repoFiles, setRepoFiles] = useState<string[]>([]);
+  const [selectedFile, setSelectedFile] = useState('');
 
   // Check GitHub connection status on load
   useEffect(() => {
@@ -130,40 +132,15 @@ export default function GitHubIntegrationPage() {
     }
   }, [selectedRepo]);
 
-  // Poll for scan status
+  // Fetch file tree when repo + branch are selected
   useEffect(() => {
-    if (!pollingScanId) return;
-
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await api.getGitHubScan(pollingScanId);
-        if (response.success && response.data) {
-          const scan = response.data;
-
-          // Update the scan in the list
-          setRecentScans(prev =>
-            prev.map(s => s.id === scan.id ? scan : s)
-          );
-
-          // Stop polling if completed or failed
-          if (scan.status === 'completed' || scan.status === 'failed') {
-            setPollingScanId(null);
-            setIsAnalyzing(false);
-
-            if (scan.status === 'completed') {
-              toast.success('Analysis completed successfully!');
-            } else {
-              toast.error(`Analysis failed: ${scan.error || 'Unknown error'}`);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error polling scan status:', error);
-      }
-    }, 3000); // Poll every 3 seconds
-
-    return () => clearInterval(pollInterval);
-  }, [pollingScanId]);
+    setSelectedFile('');
+    if (selectedRepo && selectedBranch) {
+      fetchRepoFiles();
+    } else {
+      setRepoFiles([]);
+    }
+  }, [selectedRepo, selectedBranch]);
 
   const checkGitHubStatus = async () => {
     try {
@@ -171,6 +148,7 @@ export default function GitHubIntegrationPage() {
       if (response.success && response.data) {
         setIsConnected(response.data.connected);
         setGithubUsername(response.data.username || "");
+        setGithubAvatarUrl(response.data.avatarUrl || "");
       }
     } catch (error) {
       console.error('Failed to check GitHub status:', error);
@@ -183,7 +161,9 @@ export default function GitHubIntegrationPage() {
     try {
       const response = await api.getGitHubRepos();
       if (response.success && response.data) {
-        setRepos(response.data);
+        // support both {repos:[]} and flat array shapes
+        const repoList = Array.isArray(response.data) ? response.data : (response.data.repos || []);
+        setRepos(repoList);
       }
     } catch (error) {
       console.error('Failed to fetch repos:', error);
@@ -217,6 +197,20 @@ export default function GitHubIntegrationPage() {
     }
   };
 
+  const fetchRepoFiles = async () => {
+    if (!selectedRepo || !selectedBranch) return;
+    try {
+      const response = await api.getRepoTree(selectedRepo, selectedBranch);
+      if (response?.success && Array.isArray(response?.data?.files)) {
+        setRepoFiles(response.data.files.map((f: any) => f.path));
+      } else {
+        setRepoFiles([]);
+      }
+    } catch {
+      setRepoFiles([]);
+    }
+  };
+
   const handleRefreshScans = async () => {
     setIsRefreshing(true);
     try {
@@ -229,22 +223,9 @@ export default function GitHubIntegrationPage() {
     }
   };
 
-  const handleConnect = async () => {
-    setIsConnecting(true);
-    try {
-      const response = await api.connectGitHub();
-      if (response.success && response.data?.authUrl) {
-        // Redirect to GitHub OAuth
-        window.location.href = response.data.authUrl;
-      } else {
-        toast.error('Failed to initiate GitHub connection');
-        setIsConnecting(false);
-      }
-    } catch (error) {
-      console.error('GitHub connection error:', error);
-      toast.error('Failed to connect to GitHub');
-      setIsConnecting(false);
-    }
+  const handleConnect = () => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+    window.location.href = `${apiUrl}/auth/github`;
   };
 
   const handleDisconnect = async () => {
@@ -257,6 +238,7 @@ export default function GitHubIntegrationPage() {
         setRepos([]);
         setBranches([]);
         setGithubUsername("");
+        setGithubAvatarUrl("");
         toast.success("Disconnected from GitHub");
       } else {
         toast.error('Failed to disconnect');
@@ -268,53 +250,55 @@ export default function GitHubIntegrationPage() {
   };
 
   const handleAnalyze = async () => {
-    if (!selectedRepo || !selectedBranch) {
-      toast.error("Please select a repository and branch");
+    if (!selectedRepo || !selectedBranch || !selectedFile) {
+      toast.error('Please select a repository, branch, and file');
       return;
     }
 
     setIsAnalyzing(true);
     try {
-      const [owner, repo] = selectedRepo.split('/');
-      const response = await api.analyzeGitHubRepo(owner, repo, selectedBranch);
+      // 1. Run analysis — get analysisId
+      const response = await api.analyzeGitHubFile(selectedRepo, selectedBranch, selectedFile);
 
-      if (response.success && response.data) {
-        const analysisId = response.data.analysisId;
+      if (!response?.success || !response?.data?.analysisId) {
+        toast.error(response?.error || 'Failed to analyze selected file');
+        return;
+      }
 
-        if (!analysisId) {
-          toast.error("Analysis started but ID not received");
-          setIsAnalyzing(false);
+      const analysisId = response.data.analysisId;
+      toast.success('Analysis complete! Opening in editor…');
+
+      // 2. Fetch full review (code + issues) from API
+      const reviewRes = await api.getReview(analysisId);
+      const review = reviewRes?.data;
+
+      if (review) {
+        // 3. Collect all AI issues — data is nested under review.issues.*
+        const issueBugs = review.issues?.bugs || review.bugs || [];
+        const issueSecurity = review.issues?.security || review.security || [];
+        const issuePerf = review.issues?.performance || review.performance || [];
+        const allIssues = [...issueBugs, ...issueSecurity, ...issuePerf];
+
+        // 4. Create an editor file so we can open Monaco with the issues
+        const editorRes = await api.createEditorFileFromScan(
+          analysisId,
+          review.summary?.fileName || review.fileName || selectedFile,
+          review.code || '',
+          review.summary?.language || review.language || 'text',
+          allIssues,
+        );
+
+        if (editorRes?.success && editorRes?.data?.fileId) {
+          window.location.href = `/dashboard/editor/${editorRes.data.fileId}`;
           return;
         }
-
-        toast.success("Analysis started! Status will update automatically.");
-
-        // Create initial scan entry in the list
-        const newScan = {
-          id: analysisId,
-          repo: `${owner}/${repo}`,
-          branch: selectedBranch,
-          status: 'in-progress',
-          bugs: 0,
-          security: 0,
-          performance: 0,
-          totalIssues: 0,
-          overallScore: 0,
-          progress: { totalFiles: 0, filesAnalyzed: 0, percentage: 0 },
-          date: new Date().toISOString(),
-        };
-
-        setRecentScans(prev => [newScan, ...prev]);
-
-        // Start polling for this scan
-        setPollingScanId(analysisId);
-      } else {
-        toast.error(response.error || 'Analysis failed');
-        setIsAnalyzing(false);
       }
-    } catch (error) {
-      console.error('Analysis error:', error);
-      toast.error('Failed to start analysis');
+
+      // Fallback: if editor creation failed, open the results page
+      window.location.href = `/dashboard/results/${analysisId}`;
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to analyze selected file');
+    } finally {
       setIsAnalyzing(false);
     }
   };
@@ -330,7 +314,7 @@ export default function GitHubIntegrationPage() {
       const result = await api.addRepoByUrl(repoUrl.trim());
       toast.success(result.message || "Repository added successfully!");
       setRepoUrl("");
-      
+
       // Refresh repos list to include the newly added repo
       await fetchRepos();
     } catch (error: any) {
@@ -366,8 +350,12 @@ export default function GitHubIntegrationPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-                <Github className="h-6 w-6" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted overflow-hidden">
+                {isConnected && githubAvatarUrl ? (
+                  <img src={githubAvatarUrl} alt={githubUsername} className="h-12 w-12 rounded-lg object-cover" />
+                ) : (
+                  <Github className="h-6 w-6" />
+                )}
               </div>
               <div>
                 <CardTitle className="text-xl text-card-foreground">GitHub Account</CardTitle>
@@ -445,10 +433,10 @@ export default function GitHubIntegrationPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {repos.map((repo) => (
-                        <SelectItem key={repo.full_name} value={repo.full_name}>
+                        <SelectItem key={repo.fullName || repo.full_name} value={repo.fullName || repo.full_name}>
                           <div className="flex items-center gap-2">
                             <Github className="h-4 w-4" />
-                            {repo.full_name}
+                            {repo.fullName || repo.full_name}
                           </div>
                         </SelectItem>
                       ))}
@@ -499,21 +487,57 @@ export default function GitHubIntegrationPage() {
                 </div>
               </div>
 
+              {/* File Selector */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium text-foreground">
+                    File to Analyze
+                  </Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-5 w-5">
+                          <HelpCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Select a specific file from the repository to review</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Select value={selectedFile} onValueChange={setSelectedFile} disabled={!selectedBranch || repoFiles.length === 0}>
+                  <SelectTrigger className="h-12">
+                    <SelectValue placeholder={repoFiles.length === 0 && selectedBranch ? "Loading files..." : "Select a file to analyze..."} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {repoFiles.map((file) => (
+                      <SelectItem key={file} value={file}>
+                        {file}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Only the selected file will be reviewed — no random or whole-repo scans.
+                </p>
+              </div>
+
               <Button
                 onClick={handleAnalyze}
-                disabled={!selectedRepo || !selectedBranch || isAnalyzing}
+                disabled={!selectedRepo || !selectedBranch || !selectedFile || isAnalyzing}
                 className="gap-2"
                 size="lg"
               >
                 {isAnalyzing ? (
                   <>
                     <Loader2 className="h-5 w-5 animate-spin" />
-                    Starting Analysis...
+                    Analyzing File...
                   </>
                 ) : (
                   <>
                     <Play className="h-5 w-5" />
-                    Analyze Repository
+                    Analyze Selected File
                   </>
                 )}
               </Button>

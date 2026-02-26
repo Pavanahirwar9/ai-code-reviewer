@@ -274,10 +274,18 @@ const saveGitHubToken = async (userId, accessToken, ipAddress, userAgent) => {
 };
 
 /**
- * Get GitHub token from session
+ * Get GitHub token — checks user.github.accessToken first, then session fallback
  */
 const getGitHubToken = async (userId) => {
     try {
+        // Primary: use token stored on user record (from OAuth login)
+        const User = require('../models/User.model');
+        const user = await User.findById(userId).select('github');
+        if (user?.github?.accessToken) {
+            return user.github.accessToken;
+        }
+
+        // Fallback: legacy session-based token
         const session = await Session.findOne({
             userId,
             isActive: true,

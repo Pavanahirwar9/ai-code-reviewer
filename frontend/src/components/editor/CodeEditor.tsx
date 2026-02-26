@@ -2,10 +2,11 @@
 
 /**
  * Monaco Code Editor Component
- * Provides syntax highlighting and inline issue decorations
+ * Provides syntax highlighting, inline issue decorations, diff highlighting,
+ * and imperative scroll/highlight methods (via forwardRef).
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 
 interface Issue {
@@ -23,25 +24,101 @@ interface CodeEditorProps {
     issues: Issue[];
     onChange?: (value: string) => void;
     readOnly?: boolean;
+    fixedLines?: Map<number, string>;
 }
 
-export default function CodeEditor({ 
-    code, 
-    language, 
-    issues, 
-    onChange, 
-    readOnly = false 
-}: CodeEditorProps) {
-    const editorRef = useRef<HTMLDivElement>(null);
+/** Methods exposed to the parent via ref */
+export interface CodeEditorHandle {
+    /** Scroll editor to a line and briefly flash it (on click) */
+    scrollToLine: (line: number) => void;
+    /** Temporarily highlight a line without scrolling (on hover) */
+    highlightLine: (line: number) => void;
+    /** Remove temporary hover highlight */
+    clearHighlight: () => void;
+}
+
+const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function CodeEditor(
+    { code, language, issues, onChange, readOnly = false, fixedLines },
+    ref,
+) {
+    const containerRef = useRef<HTMLDivElement>(null);
     const monacoEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+    const diffDecorationsRef = useRef<string[]>([]);
+    const hoverDecorationsRef = useRef<string[]>([]);
+    const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [isEditorReady, setIsEditorReady] = useState(false);
+
+    // Expose scroll/highlight API to parent
+    useImperativeHandle(ref, () => ({
+        scrollToLine(line: number) {
+            const editor = monacoEditorRef.current;
+            if (!editor) return;
+            const model = editor.getModel();
+            if (!model) return;
+            const safeLine = Math.min(Math.max(1, line), model.getLineCount());
+
+            // Scroll to center
+            editor.revealLineInCenter(safeLine, monaco.editor.ScrollType.Smooth);
+
+            // Flash the line with a bright highlight then fade back to issue underline
+            const lineContent = model.getLineContent(safeLine);
+            const endCol = lineContent.length + 1;
+
+            hoverDecorationsRef.current = editor.deltaDecorations(
+                hoverDecorationsRef.current,
+                [{
+                    range: new monaco.Range(safeLine, 1, safeLine, endCol),
+                    options: {
+                        isWholeLine: true,
+                        className: 'editorClickFlash',
+                        glyphMarginClassName: 'clickFlashGlyph',
+                    },
+                }],
+            );
+
+            if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+            hoverTimerRef.current = setTimeout(() => {
+                hoverDecorationsRef.current = editor.deltaDecorations(
+                    hoverDecorationsRef.current, [],
+                );
+            }, 1200);
+        },
+
+        highlightLine(line: number) {
+            const editor = monacoEditorRef.current;
+            if (!editor) return;
+            const model = editor.getModel();
+            if (!model) return;
+            const safeLine = Math.min(Math.max(1, line), model.getLineCount());
+            const lineContent = model.getLineContent(safeLine);
+            const endCol = lineContent.length + 1;
+
+            hoverDecorationsRef.current = editor.deltaDecorations(
+                hoverDecorationsRef.current,
+                [{
+                    range: new monaco.Range(safeLine, 1, safeLine, endCol),
+                    options: {
+                        isWholeLine: true,
+                        className: 'editorHoverHighlight',
+                    },
+                }],
+            );
+        },
+
+        clearHighlight() {
+            const editor = monacoEditorRef.current;
+            if (!editor) return;
+            hoverDecorationsRef.current = editor.deltaDecorations(
+                hoverDecorationsRef.current, [],
+            );
+        },
+    }), [isEditorReady]);
 
     // Initialize Monaco Editor
     useEffect(() => {
-        if (!editorRef.current) return;
+        if (!containerRef.current) return;
 
-        // Create editor instance
-        const editor = monaco.editor.create(editorRef.current, {
+        const editor = monaco.editor.create(containerRef.current, {
             value: code,
             language: getMonacoLanguage(language),
             theme: 'vs-dark',
@@ -59,15 +136,12 @@ export default function CodeEditor({
         monacoEditorRef.current = editor;
         setIsEditorReady(true);
 
-        // Listen for content changes
         if (onChange) {
             editor.onDidChangeModelContent(() => {
-                const value = editor.getValue();
-                onChange(value);
+                onChange(editor.getValue());
             });
         }
 
-        // Cleanup
         return () => {
             editor.dispose();
         };
@@ -83,7 +157,7 @@ export default function CodeEditor({
         }
     }, [code, isEditorReady]);
 
-    // Apply decorations for issues (inline highlighting)
+    // Apply issue decorations (underlines + markers)
     useEffect(() => {
         if (!monacoEditorRef.current || !isEditorReady) return;
 
@@ -91,19 +165,15 @@ export default function CodeEditor({
         const model = editor.getModel();
         if (!model) return;
 
-        // Create decorations for each issue
         const decorations: monaco.editor.IModelDeltaDecoration[] = [];
         const markers: monaco.editor.IMarkerData[] = [];
 
         issues.forEach((issue) => {
             const line = Math.max(1, issue.line);
             const column = Math.max(1, issue.column || 1);
-
-            // Get line content to determine the end column
             const lineContent = model.getLineContent(line);
             const endColumn = lineContent.length + 1;
 
-            // Determine severity class and marker severity
             let inlineClassName = '';
             let markerSeverity = monaco.MarkerSeverity.Warning;
 
@@ -126,7 +196,6 @@ export default function CodeEditor({
                     break;
             }
 
-            // Add decoration (visual underline)
             decorations.push({
                 range: new monaco.Range(line, column, line, endColumn),
                 options: {
@@ -136,7 +205,6 @@ export default function CodeEditor({
                 },
             });
 
-            // Add marker (shows in problems panel and on hover)
             markers.push({
                 severity: markerSeverity,
                 startLineNumber: line,
@@ -149,22 +217,59 @@ export default function CodeEditor({
             });
         });
 
-        // Apply decorations
         editor.deltaDecorations([], decorations);
-
-        // Set markers
         monaco.editor.setModelMarkers(model, 'analysis', markers);
-
     }, [issues, isEditorReady]);
 
-    return (
-        <div ref={editorRef} className="w-full h-full" />
-    );
-}
+    // Apply green diff decorations for fixed lines
+    useEffect(() => {
+        if (!monacoEditorRef.current || !isEditorReady) return;
 
-/**
- * Map language names to Monaco language IDs
- */
+        const editor = monacoEditorRef.current;
+        const model = editor.getModel();
+        if (!model) return;
+
+        const newDecorations: monaco.editor.IModelDeltaDecoration[] = [];
+
+        if (fixedLines && fixedLines.size > 0) {
+            fixedLines.forEach((originalCode, lineNumber) => {
+                const lineCount = model.getLineCount();
+                if (lineNumber < 1 || lineNumber > lineCount) return;
+
+                const lineContent = model.getLineContent(lineNumber);
+                const endCol = lineContent.length + 1;
+
+                newDecorations.push({
+                    range: new monaco.Range(lineNumber, 1, lineNumber, endCol),
+                    options: {
+                        isWholeLine: true,
+                        className: 'diffFixedLine',
+                        glyphMarginClassName: 'fixedGlyph',
+                        hoverMessage: {
+                            value: `**✅ Fixed** — was:\n\`\`\`\n${originalCode.trim()}\n\`\`\``,
+                        },
+                        after: {
+                            content: `  // ← was: ${originalCode.trim().slice(0, 60)}${originalCode.trim().length > 60 ? '…' : ''}`,
+                            inlineClassName: 'diffRemovedComment',
+                        },
+                    },
+                });
+            });
+        }
+
+        diffDecorationsRef.current = editor.deltaDecorations(
+            diffDecorationsRef.current,
+            newDecorations,
+        );
+    }, [fixedLines, isEditorReady]);
+
+    return (
+        <div ref={containerRef} className="w-full h-full" />
+    );
+});
+
+export default CodeEditor;
+
 function getMonacoLanguage(language: string): string {
     const languageMap: Record<string, string> = {
         javascript: 'javascript',
@@ -190,22 +295,14 @@ function getMonacoLanguage(language: string): string {
         markdown: 'markdown',
         text: 'plaintext',
     };
-
     return languageMap[language.toLowerCase()] || 'plaintext';
 }
 
-/**
- * Get glyph margin class for issue severity
- */
 function getGlyphMarginClass(severity: string): string {
     switch (severity) {
-        case 'error':
-            return 'errorGlyph';
-        case 'security':
-            return 'securityGlyph';
-        case 'warning':
-            return 'warningGlyph';
-        default:
-            return 'infoGlyph';
+        case 'error': return 'errorGlyph';
+        case 'security': return 'securityGlyph';
+        case 'warning': return 'warningGlyph';
+        default: return 'infoGlyph';
     }
 }

@@ -4,6 +4,7 @@
  */
 
 const { body, param, query, validationResult } = require('express-validator');
+const { verifyEmail } = require('./verifyEmail');
 
 /**
  * Validate request and return errors
@@ -37,7 +38,12 @@ const registerValidation = [
         .trim()
         .notEmpty().withMessage('Email is required')
         .isEmail().withMessage('Please provide a valid email')
-        .normalizeEmail(),
+        .normalizeEmail()
+        .custom(async (value) => {
+            const result = await verifyEmail(value);
+            if (!result.valid) throw new Error(result.reason);
+            return true;
+        }),
 
     body('password')
         .notEmpty().withMessage('Password is required')

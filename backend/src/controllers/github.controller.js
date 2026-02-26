@@ -1,3 +1,4 @@
+
 // backend/controllers/github.controller.js
 /**
  * GitHub Controller
@@ -394,28 +395,33 @@ exports.analyzeRepo = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.getStatus = asyncHandler(async (req, res) => {
-    const accessToken = await githubService.getGitHubToken(req.user._id);
+    const user = await User.findById(req.user._id).select('github githubUsername');
+    const connected = !!(user?.github?.accessToken);
 
-    const status = {
-        connected: !!accessToken,
-        username: req.user.githubUsername || null,
-    };
-
-    sendSuccess(res, status, 'GitHub status retrieved');
+    sendSuccess(res, {
+        connected,
+        username: user?.github?.username || user?.githubUsername || null,
+        avatarUrl: user?.github?.avatarUrl || null,
+        profileUrl: user?.github?.profileUrl || null,
+    }, 'GitHub status retrieved');
 });
 
 /**
- * @route   DELETE /api/github/disconnect
+ * @route   POST /api/github/disconnect
  * @desc    Disconnect GitHub account
  * @access  Private
  */
 exports.disconnect = asyncHandler(async (req, res) => {
-    // Remove GitHub token from session
+    await User.findByIdAndUpdate(req.user._id, {
+        $unset: { github: '' },
+    });
+
+    // Also clear session token if present
     const Session = require('../models/Session.model');
     await Session.updateOne(
         { userId: req.user._id },
         { $unset: { githubAccessToken: 1 } }
-    );
+    ).catch(() => {});
 
     logger.info(`GitHub disconnected for user: ${req.user.email}`);
 
@@ -957,6 +963,85 @@ exports.addRepoByUrl = asyncHandler(async (req, res) => {
         }
 
         return sendError(res, `Failed to add repository: ${error.message}`, 500);
+    }
+});
+
+/**
+ * @route   POST /api/github/analyze-file
+ * @desc    Analyze a single selected file from GitHub
+ * @access  Private
+ */
+exports.analyzeSelectedFile = asyncHandler(async (req, res) => {
+    const { repo, branch, path: filePath } = req.body;
+
+    if (!repo || !branch || !filePath) {
+        return sendError(res, 'Repository, branch, and file path are required', 400);
+    }
+
+    const [owner, repoName] = repo.split('/');
+    if (!owner || !repoName) {
+        return sendError(res, 'Repository must be in format: owner/repo', 400);
+    }
+
+    const accessToken = await githubService.getGitHubToken(req.user._id);
+    if (!accessToken) {
+        return sendError(res, 'GitHub not connected. Please connect your GitHub account first.', 401);
+    }
+
+    const fileData = await githubService.fetchFileContent(
+        accessToken,
+        owner,
+        repoName,
+        filePath,
+        branch
+    );
+
+    const code = fileData?.content || '';
+    if (!code.trim()) {
+        return sendError(res, 'Selected file is empty or unreadable', 400);
+    }
+
+    const language = detectLanguageFromFilename(filePath);
+
+    const review = await Review.create({
+        userId: req.user._id,
+        source: 'github',
+        fileName: filePath,
+        language,
+        code,
+        linesAnalyzed: code.split('\n').length,
+        status: 'in-progress',
+        metadata: {
+            repository: { owner, repo: repoName, branch },
+            selectedFile: filePath,
+        },
+    });
+
+    try {
+        const lintResults = await runESLint(code, language);
+        const securityPatterns = analyzeSecurityPatterns(code);
+        const aiResults = await reviewCode(code, language, filePath);
+
+        review.bugs = [...(aiResults?.bugs || []), ...(lintResults || [])];
+        review.security = [...(aiResults?.security || []), ...(securityPatterns || [])];
+        review.performance = aiResults?.performance || [];
+        review.suggestions = aiResults?.suggestions || [];
+        review.status = 'completed';
+        review.calculateScore();
+        await review.save();
+
+        logger.info(`Selected file analyzed: ${filePath} from ${repo}/${branch} by user: ${req.user.email}`);
+
+        return sendSuccess(
+            res,
+            { analysisId: review._id, report: generateReport(review) },
+            'Selected file analyzed successfully'
+        );
+    } catch (err) {
+        review.status = 'failed';
+        review.error = err.message;
+        await review.save();
+        return sendError(res, err.message || 'Failed to analyze selected file', 500);
     }
 });
 

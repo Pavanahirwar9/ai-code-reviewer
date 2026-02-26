@@ -1,0 +1,112 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _REGION: us-central1
+  _AR_REPO: ai-code-review
+  _BACKEND_SERVICE: ai-code-review-backend
+  _FRONTEND_SERVICE: ai-code-review-frontend
+  _BACKEND_SECRET_VARS: ""
+  _OPENAI_MODEL: gpt-4o-mini
+  _RATE_LIMIT_WINDOW: "15"
+  _RATE_LIMIT_MAX: "100"
+  _NEXT_PUBLIC_APP_NAME: CodeLens AI
+
+steps:
+  - id: build-backend-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_BACKEND_SERVICE}:$COMMIT_SHA
+      - ./backend
+
+  - id: push-backend-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_BACKEND_SERVICE}:$COMMIT_SHA
+
+  - id: deploy-backend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        SECRET_FLAG=""
+        if [ -n "${_BACKEND_SECRET_VARS}" ]; then
+          SECRET_FLAG="--set-secrets=${_BACKEND_SECRET_VARS}"
+        fi
+
+        gcloud run deploy "${_BACKEND_SERVICE}" \
+          --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_BACKEND_SERVICE}:$COMMIT_SHA" \
+          --region "${_REGION}" \
+          --platform managed \
+          --allow-unauthenticated \
+          --port 8080 \
+          --set-env-vars "NODE_ENV=production,OPENAI_MODEL=${_OPENAI_MODEL},RATE_LIMIT_WINDOW=${_RATE_LIMIT_WINDOW},RATE_LIMIT_MAX=${_RATE_LIMIT_MAX}" \
+          ${SECRET_FLAG}
+
+  - id: resolve-backend-url
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        BACKEND_URL="$(gcloud run services describe "${_BACKEND_SERVICE}" --region "${_REGION}" --format='value(status.url)')"
+        echo "${BACKEND_URL}" > /workspace/backend_url.txt
+
+  - id: build-frontend-image
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        BACKEND_URL="$(cat /workspace/backend_url.txt)"
+        docker build \
+          --build-arg NEXT_PUBLIC_API_URL="${BACKEND_URL}/api" \
+          --build-arg NEXT_PUBLIC_APP_NAME="${_NEXT_PUBLIC_APP_NAME}" \
+          -t "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_FRONTEND_SERVICE}:$COMMIT_SHA" \
+          ./frontend
+
+  - id: push-frontend-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_FRONTEND_SERVICE}:$COMMIT_SHA
+
+  - id: deploy-frontend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        BACKEND_URL="$(cat /workspace/backend_url.txt)"
+        gcloud run deploy "${_FRONTEND_SERVICE}" \
+          --image "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_FRONTEND_SERVICE}:$COMMIT_SHA" \
+          --region "${_REGION}" \
+          --platform managed \
+          --allow-unauthenticated \
+          --port 8080 \
+          --set-env-vars "NODE_ENV=production,NEXT_PUBLIC_API_URL=${BACKEND_URL}/api,NEXT_PUBLIC_APP_NAME=${_NEXT_PUBLIC_APP_NAME}"
+
+  - id: sync-backend-frontend-url
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        BACKEND_URL="$(cat /workspace/backend_url.txt)"
+        FRONTEND_URL="$(gcloud run services describe "${_FRONTEND_SERVICE}" --region "${_REGION}" --format='value(status.url)')"
+        gcloud run services update "${_BACKEND_SERVICE}" \
+          --region "${_REGION}" \
+          --update-env-vars "FRONTEND_URL=${FRONTEND_URL},BACKEND_URL=${BACKEND_URL}/api"
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_BACKEND_SERVICE}:$COMMIT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_FRONTEND_SERVICE}:$COMMIT_SHA

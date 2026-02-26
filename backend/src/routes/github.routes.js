@@ -17,6 +17,7 @@ const {
     getFileContent,
     getMultipleFileContents,
     analyzeRepoFileByFile,
+    analyzeSelectedFile,
     getScans,
     getScan,
     addRepoByUrl,
@@ -41,6 +42,7 @@ router.get('/scan/:scanId', getScan);
 router.post('/add-repo-url', addRepoByUrl);
 router.post('/analyze', githubRepoValidation, validate, analyzeRepo);
 router.post('/analyze-repo', analyzeRepoFileByFile);
+router.post('/analyze-file', analyzeSelectedFile);
 router.post('/tree', getRepoTree);
 router.post('/file', getFileContent);
 router.post('/files', getMultipleFileContents);

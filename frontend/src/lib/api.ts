@@ -61,7 +61,13 @@ class ApiClient {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.message || 'An error occurred');
+                // Return structured error rather than throwing, so callers can inspect response.data
+                return {
+                    success: false,
+                    error: data.message || data.error || 'An error occurred',
+                    message: data.message,
+                    data: data.data,
+                };
             }
 
             return data;
@@ -132,6 +138,33 @@ class ApiClient {
             method: 'PUT',
             body: JSON.stringify({ currentPassword, newPassword }),
         }, true);
+    }
+
+    async forgotPassword(email: string) {
+        return this.request('/auth/forgot-password', {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+        });
+    }
+
+    async resetPassword(token: string, password: string) {
+        return this.request(`/auth/reset-password/${token}`, {
+            method: 'PUT',
+            body: JSON.stringify({ password }),
+        });
+    }
+
+    async verifyEmail(token: string) {
+        return this.request(`/auth/verify-email/${token}`, {
+            method: 'GET',
+        });
+    }
+
+    async resendVerification(email: string) {
+        return this.request('/auth/resend-verification', {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+        });
     }
 
     // Code Review endpoints (public - no auth required for testing)
@@ -207,6 +240,20 @@ class ApiClient {
         }, true);
     }
 
+    async analyzeGitHubFile(repo: string, branch: string, path: string) {
+        return this.request('/github/analyze-file', {
+            method: 'POST',
+            body: JSON.stringify({ repo, branch, path }),
+        }, true);
+    }
+
+    async getRepoTree(repo: string, branch: string) {
+        return this.request('/github/tree', {
+            method: 'POST',
+            body: JSON.stringify({ repo, branch }),
+        }, true);
+    }
+
     async disconnectGitHub() {
         return this.request('/github/disconnect', {
             method: 'POST',
@@ -257,9 +304,10 @@ class ApiClient {
         }, true);
     }
 
-    async reanalyzeFile(fileId: string) {
+    async reanalyzeFile(fileId: string, currentCode?: string) {
         return this.request(`/editor/file/${fileId}/reanalyze`, {
             method: 'POST',
+            body: JSON.stringify({ code: currentCode ?? '' }),
         }, true);
     }
 

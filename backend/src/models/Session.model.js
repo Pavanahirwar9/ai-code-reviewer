@@ -24,6 +24,7 @@ const sessionSchema = new mongoose.Schema({
     sessionToken: {
         type: String,
         unique: true,
+        sparse: true,
     },
     isActive: {
         type: Boolean,

@@ -29,6 +29,12 @@ const issueSchema = new mongoose.Schema({
         enum: ['eslint', 'ai', 'security'],
         default: 'eslint',
     },
+    // AI-generated fields for "Apply Fix" feature
+    title: { type: String, default: null },
+    suggestion: { type: String, default: null },
+    originalCode: { type: String, default: null },
+    howToFix: { type: [String], default: [] },
+    fixed: { type: Boolean, default: false },
 }, { _id: false });
 
 const editorFileSchema = new mongoose.Schema({
