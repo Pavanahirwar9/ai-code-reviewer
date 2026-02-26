@@ -1,0 +1,170 @@
+version: 0.2
+
+# AWS CodeBuild buildspec — mirrors the Google Cloud Build (cloudbuild.yaml) pipeline.
+# Triggered on every push to the main branch via a CodeBuild webhook.
+#
+# Required CodeBuild environment variables (set in the project's environment section):
+#   AWS_REGION            e.g. us-east-1
+#   AWS_ACCOUNT_ID        your 12-digit account ID
+#   BACKEND_SERVICE_NAME  ai-code-review-backend
+#   FRONTEND_SERVICE_NAME ai-code-review-frontend
+
+env:
+  exported-variables:
+    - BACKEND_URL
+    - FRONTEND_URL
+
+phases:
+
+  # ─── Install tools ───────────────────────────────────────────────────────────
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - echo "Installing AWS CLI and jq..."
+      - pip install --quiet awscli --upgrade
+      - yum install -y jq 2>/dev/null || apt-get install -y jq 2>/dev/null || true
+
+  # ─── Authenticate Docker with ECR ───────────────────────────────────────────
+  pre_build:
+    commands:
+      - echo "Logging into ECR..."
+      - aws ecr get-login-password --region $AWS_REGION |
+          docker login --username AWS --password-stdin
+          "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+      - echo "Login succeeded"
+      - BACKEND_ECR="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$BACKEND_SERVICE_NAME"
+      - FRONTEND_ECR="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$FRONTEND_SERVICE_NAME"
+      - IMAGE_TAG="$CODEBUILD_BUILD_NUMBER"
+      - echo "IMAGE_TAG=$IMAGE_TAG BACKEND_ECR=$BACKEND_ECR"
+
+  # ─── Build, push, deploy ────────────────────────────────────────────────────
+  build:
+    commands:
+
+      # ── 1. Build and push BACKEND image ──────────────────────────────────────
+      - echo "Building backend image..."
+      - docker build -t "$BACKEND_ECR:$IMAGE_TAG" -t "$BACKEND_ECR:latest" ./backend
+      - docker push "$BACKEND_ECR:$IMAGE_TAG"
+      - docker push "$BACKEND_ECR:latest"
+
+      # ── 2. Deploy BACKEND to App Runner ──────────────────────────────────────
+      - echo "Deploying backend to App Runner..."
+      - |
+        BACKEND_ARN=$(aws apprunner list-services --region $AWS_REGION \
+          --query "ServiceSummaryList[?ServiceName=='$BACKEND_SERVICE_NAME'].ServiceArn" \
+          --output text)
+      - |
+        if [ -z "$BACKEND_ARN" ]; then
+          echo "Backend App Runner service not found. Create it first via DEPLOYMENT_AWS.md Step 6."
+          exit 1
+        fi
+      - |
+        aws apprunner update-service \
+          --region $AWS_REGION \
+          --service-arn "$BACKEND_ARN" \
+          --source-configuration '{
+            "ImageRepository": {
+              "ImageIdentifier": "'"$BACKEND_ECR:$IMAGE_TAG"'",
+              "ImageConfiguration": { "Port": "8080" },
+              "ImageRepositoryType": "ECR"
+            },
+            "AuthenticationConfiguration": {
+              "AccessRoleArn": "arn:aws:iam::'"$AWS_ACCOUNT_ID"':role/AppRunnerECRAccessRole"
+            }
+          }' > /dev/null
+      - echo "Waiting for backend deployment to complete..."
+      - |
+        aws apprunner wait service-updated \
+          --service-arn "$BACKEND_ARN" \
+          --region $AWS_REGION || true
+
+      # ── 3. Resolve backend URL ────────────────────────────────────────────────
+      - |
+        BACKEND_URL=$(aws apprunner describe-service \
+          --service-arn "$BACKEND_ARN" \
+          --region $AWS_REGION \
+          --query "Service.ServiceUrl" \
+          --output text)
+      - echo "Backend URL: https://$BACKEND_URL"
+
+      # ── 4. Build and push FRONTEND image (with backend URL baked in) ──────────
+      - echo "Building frontend image..."
+      - |
+        docker build \
+          --build-arg NEXT_PUBLIC_API_URL="https://$BACKEND_URL/api" \
+          --build-arg NEXT_PUBLIC_APP_NAME="CodeLens AI" \
+          -t "$FRONTEND_ECR:$IMAGE_TAG" \
+          -t "$FRONTEND_ECR:latest" \
+          ./frontend
+      - docker push "$FRONTEND_ECR:$IMAGE_TAG"
+      - docker push "$FRONTEND_ECR:latest"
+
+      # ── 5. Deploy FRONTEND to App Runner ─────────────────────────────────────
+      - echo "Deploying frontend to App Runner..."
+      - |
+        FRONTEND_ARN=$(aws apprunner list-services --region $AWS_REGION \
+          --query "ServiceSummaryList[?ServiceName=='$FRONTEND_SERVICE_NAME'].ServiceArn" \
+          --output text)
+      - |
+        if [ -z "$FRONTEND_ARN" ]; then
+          echo "Frontend App Runner service not found. Create it first via DEPLOYMENT_AWS.md Step 8."
+          exit 1
+        fi
+      - |
+        aws apprunner update-service \
+          --region $AWS_REGION \
+          --service-arn "$FRONTEND_ARN" \
+          --source-configuration '{
+            "ImageRepository": {
+              "ImageIdentifier": "'"$FRONTEND_ECR:$IMAGE_TAG"'",
+              "ImageConfiguration": {
+                "Port": "8080",
+                "RuntimeEnvironmentVariables": {
+                  "NEXT_PUBLIC_API_URL":  "https://'"$BACKEND_URL"'/api",
+                  "NEXT_PUBLIC_APP_NAME": "CodeLens AI"
+                }
+              },
+              "ImageRepositoryType": "ECR"
+            },
+            "AuthenticationConfiguration": {
+              "AccessRoleArn": "arn:aws:iam::'"$AWS_ACCOUNT_ID"':role/AppRunnerECRAccessRole"
+            }
+          }' > /dev/null
+      - echo "Waiting for frontend deployment..."
+      - |
+        aws apprunner wait service-updated \
+          --service-arn "$FRONTEND_ARN" \
+          --region $AWS_REGION || true
+
+      # ── 6. Resolve frontend URL and update backend CORS env ──────────────────
+      - |
+        FRONTEND_URL=$(aws apprunner describe-service \
+          --service-arn "$FRONTEND_ARN" \
+          --region $AWS_REGION \
+          --query "Service.ServiceUrl" \
+          --output text)
+      - echo "Frontend URL: https://$FRONTEND_URL"
+      - |
+        aws apprunner update-service \
+          --region $AWS_REGION \
+          --service-arn "$BACKEND_ARN" \
+          --source-configuration '{
+            "ImageRepository": {
+              "ImageConfiguration": {
+                "RuntimeEnvironmentVariables": {
+                  "FRONTEND_URL": "https://'"$FRONTEND_URL"'",
+                  "BACKEND_URL":  "https://'"$BACKEND_URL"'"
+                }
+              }
+            }
+          }' > /dev/null
+
+  # ─── Post-build summary ──────────────────────────────────────────────────────
+  post_build:
+    commands:
+      - echo "================================================"
+      - echo "Deployment complete!"
+      - echo "  Backend:  https://$BACKEND_URL"
+      - echo "  Frontend: https://$FRONTEND_URL"
+      - echo "================================================"
