@@ -21,13 +21,6 @@ const generateToken = (userId) => {
     });
 };
 
-const withTimeout = (promise, ms, label = 'operation') => Promise.race([
-    promise,
-    new Promise((_, reject) => {
-        setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-    }),
-]);
-
 const getBackendApiBaseUrl = (req) => {
     if (process.env.BACKEND_URL) {
         const rawBaseUrl = process.env.BACKEND_URL.trim().replace(/\/+$/, '');
@@ -90,48 +83,22 @@ exports.register = asyncHandler(async (req, res) => {
         return sendError(res, 'Email already registered', 400);
     }
 
-    // Generate email verification token
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-    // Create user (not yet verified)
+    // Create user (email verification disabled)
     const user = await User.create({
         name,
         email: normalizedEmail,
         password,
-        isEmailVerified: false,
-        emailVerificationToken: hashedToken,
-        emailVerificationExpire: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+        isEmailVerified: true,
     });
 
-    // Send verification email
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const verifyUrl = `${frontendUrl}/verify-email/${rawToken}`;
-    let emailDeliveryFailed = false;
+    const token = generateToken(user._id);
 
-    try {
-        const { sendVerificationEmail } = require('../config/email');
-        const result = await withTimeout(
-            sendVerificationEmail(user.email, user.name, verifyUrl),
-            12000,
-            'verification email'
-        );
-        if (result && result.devMode) {
-            logger.info(`[DEV] Verify URL: ${verifyUrl}`);
-        }
-    } catch (emailErr) {
-        emailDeliveryFailed = true;
-        logger.error(`Failed to send verification email: ${emailErr.message}`);
-    }
-
-    logger.info(`New user registered (pending verification): ${user.email}`);
+    logger.info(`New user registered: ${user.email}`);
 
     return sendSuccess(
         res,
-        { needsVerification: true, email: user.email, emailDeliveryFailed },
-        emailDeliveryFailed
-            ? 'Account created. Verification email could not be sent right now. Please use resend verification.'
-            : 'Account created! Please check your email to verify your account.',
+        { token, user: user.getPublicProfile() },
+        'Account created successfully.',
         201
     );
 });
@@ -157,15 +124,6 @@ exports.login = asyncHandler(async (req, res) => {
 
     if (!isMatch) {
         return sendError(res, 'Invalid credentials', 401);
-    }
-
-    // Block unverified accounts
-    if (!user.isEmailVerified) {
-        return res.status(403).json({
-            success: false,
-            error: 'Please verify your email before logging in.',
-            data: { emailNotVerified: true, email: user.email },
-        });
     }
 
     // Update last login
@@ -445,41 +403,7 @@ exports.githubCallback = asyncHandler(async (req, res) => {
  * @access  Public
  */
 exports.verifyEmail = asyncHandler(async (req, res) => {
-    const { token } = req.params;
-    if (!token) return sendError(res, 'Verification token is missing', 400);
-
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-
-    const user = await User.findOne({
-        emailVerificationToken: hashedToken,
-        emailVerificationExpire: { $gt: Date.now() },
-    });
-
-    if (!user) {
-        return sendError(res, 'Invalid or expired verification link. Please request a new one.', 400);
-    }
-
-    // Activate account
-    user.isEmailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpire = undefined;
-    await user.save({ validateBeforeSave: false });
-
-    logger.info(`Email verified for user: ${user.email}`);
-
-    // Create session and return JWT so user is immediately logged in
-    const sessionToken = generateToken(user._id);
-    await Session.create({
-        userId: user._id,
-        sessionToken,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-        isActive: true,
-    });
-
-    const jwtToken = generateToken(user._id);
-    return sendSuccess(res, { token: jwtToken, user: user.getPublicProfile() }, 'Email verified! Welcome to CodeLens AI.');
+    return sendSuccess(res, null, 'Email verification is disabled. Your account is already active.');
 });
 
 /**
@@ -488,35 +412,7 @@ exports.verifyEmail = asyncHandler(async (req, res) => {
  * @access  Public
  */
 exports.resendVerification = asyncHandler(async (req, res) => {
-    const { email } = req.body;
-    if (!email) return sendError(res, 'Email is required', 400);
-
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-
-    // Always return success to prevent enumeration
-    if (!user || user.isEmailVerified) {
-        return sendSuccess(res, null, 'If that account exists and is unverified, a new link has been sent.');
-    }
-
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-    user.emailVerificationToken = hashedToken;
-    user.emailVerificationExpire = Date.now() + 24 * 60 * 60 * 1000;
-    await user.save({ validateBeforeSave: false });
-
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const verifyUrl = `${frontendUrl}/verify-email/${rawToken}`;
-
-    try {
-        const { sendVerificationEmail } = require('../config/email');
-        await sendVerificationEmail(user.email, user.name, verifyUrl);
-    } catch (err) {
-        logger.error(`Failed to resend verification email: ${err.message}`);
-        return sendError(res, 'Could not send email. Please try again later.', 500);
-    }
-
-    return sendSuccess(res, null, 'If that account exists and is unverified, a new link has been sent.');
+    return sendSuccess(res, null, 'Email verification is disabled. You can log in directly.');
 });
 
 /**
