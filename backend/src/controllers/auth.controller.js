@@ -21,6 +21,13 @@ const generateToken = (userId) => {
     });
 };
 
+const withTimeout = (promise, ms, label = 'operation') => Promise.race([
+    promise,
+    new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+]);
+
 const getBackendApiBaseUrl = (req) => {
     if (process.env.BACKEND_URL) {
         const rawBaseUrl = process.env.BACKEND_URL.trim().replace(/\/+$/, '');
@@ -64,16 +71,21 @@ const getOAuthRedirectUri = (provider, req) => {
  * @access  Public
  */
 exports.register = asyncHandler(async (req, res) => {
-    // Log the incoming request for debugging
-    logger.info('Registration request received:', {
-        body: req.body,
-        headers: req.headers['content-type']
+    const { name, email, password } = req.body;
+    const normalizedEmail = (email || '').toLowerCase().trim();
+
+    logger.info('Registration request received', {
+        email: normalizedEmail,
+        hasPassword: Boolean(password),
+        contentType: req.headers['content-type'],
     });
 
-    const { name, email, password } = req.body;
+    if (!normalizedEmail) {
+        return sendError(res, 'Email is required', 400);
+    }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
         return sendError(res, 'Email already registered', 400);
     }
@@ -85,7 +97,7 @@ exports.register = asyncHandler(async (req, res) => {
     // Create user (not yet verified)
     const user = await User.create({
         name,
-        email,
+        email: normalizedEmail,
         password,
         isEmailVerified: false,
         emailVerificationToken: hashedToken,
@@ -96,18 +108,16 @@ exports.register = asyncHandler(async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const verifyUrl = `${frontendUrl}/verify-email/${rawToken}`;
 
-    try {
-        const { sendVerificationEmail } = require('../config/email');
-        const result = await sendVerificationEmail(user.email, user.name, verifyUrl);
-        if (result && result.devMode) {
-            logger.info(`[DEV] Verify URL: ${verifyUrl}`);
-        }
-    } catch (emailErr) {
-        // Roll back user creation if email fails
-        await User.findByIdAndDelete(user._id);
-        logger.error(`Failed to send verification email: ${emailErr.message}`);
-        return sendError(res, 'Could not send verification email. Please try again.', 500);
-    }
+    const { sendVerificationEmail } = require('../config/email');
+    withTimeout(sendVerificationEmail(user.email, user.name, verifyUrl), 12000, 'verification email')
+        .then((result) => {
+            if (result && result.devMode) {
+                logger.info(`[DEV] Verify URL: ${verifyUrl}`);
+            }
+        })
+        .catch((emailErr) => {
+            logger.error(`Failed to send verification email for ${user.email}: ${emailErr.message}`);
+        });
 
     logger.info(`New user registered (pending verification): ${user.email}`);
 
@@ -126,9 +136,10 @@ exports.register = asyncHandler(async (req, res) => {
  */
 exports.login = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
+    const normalizedEmail = (email || '').toLowerCase().trim();
 
     // Check for user
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email: normalizedEmail }).select('+password');
 
     if (!user) {
         return sendError(res, 'Invalid credentials', 401);
@@ -298,6 +309,7 @@ exports.githubLogin = asyncHandler(async (req, res) => {
 exports.githubCallback = asyncHandler(async (req, res) => {
     const { code } = req.query;
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const redirectUri = getOAuthRedirectUri('github', req);
 
     if (!code) {
         return res.redirect(`${frontendUrl}/login?error=no_code`);
@@ -311,6 +323,7 @@ exports.githubCallback = asyncHandler(async (req, res) => {
                 client_id: process.env.GITHUB_CLIENT_ID,
                 client_secret: process.env.GITHUB_CLIENT_SECRET,
                 code,
+                redirect_uri: redirectUri,
             },
             { headers: { Accept: 'application/json' } }
         );
@@ -364,6 +377,7 @@ exports.githubCallback = asyncHandler(async (req, res) => {
                     email: primaryEmail,
                     password: crypto.randomBytes(32).toString('hex'),
                     avatar: githubUser.avatar_url,
+                    isEmailVerified: true,
                     githubId: githubIdStr,
                     githubUsername: githubUser.login,
                     github: githubData,
@@ -392,6 +406,7 @@ exports.githubCallback = asyncHandler(async (req, res) => {
         user.githubId = githubIdStr;
         user.githubUsername = githubUser.login;
         user.avatar = user.avatar || githubUser.avatar_url;
+        user.isEmailVerified = true;
         user.lastLogin = new Date();
         await user.save();
         logger.info(`GitHub OAuth login successful: ${user.email}`);
@@ -408,7 +423,11 @@ exports.githubCallback = asyncHandler(async (req, res) => {
             `${frontendUrl}/auth/github/success?token=${token}`
         );
     } catch (err) {
-        logger.error(`GitHub OAuth callback error: ${err.message}`);
+        logger.error('GitHub OAuth callback error', {
+            message: err.message,
+            status: err.response?.status,
+            data: err.response?.data,
+        });
         return res.redirect(`${frontendUrl}/login?error=github_failed`);
     }
 });

@@ -22,6 +22,9 @@ const createTransporter = () => {
         host: EMAIL_HOST,
         port: Number(EMAIL_PORT) || 587,
         secure: Number(EMAIL_PORT) === 465, // true for 465, false for 587
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
         auth: {
             user: EMAIL_USER,
             pass: EMAIL_PASS,
