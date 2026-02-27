@@ -23,7 +23,11 @@ const generateToken = (userId) => {
 
 const getBackendApiBaseUrl = (req) => {
     if (process.env.BACKEND_URL) {
-        return process.env.BACKEND_URL;
+        const rawBaseUrl = process.env.BACKEND_URL.trim().replace(/\/+$/, '');
+        if (rawBaseUrl.endsWith('/api')) {
+            return rawBaseUrl;
+        }
+        return `${rawBaseUrl}/api`;
     }
 
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
