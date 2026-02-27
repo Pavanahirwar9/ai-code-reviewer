@@ -86,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const err: any = new Error('Account created! Please verify your email.');
                     err.needsVerification = true;
                     err.email = response.data.email;
+                    err.emailDeliveryFailed = !!response.data.emailDeliveryFailed;
                     throw err;
                 }
                 // Direct login (e.g. admin or OAuth)

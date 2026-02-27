@@ -99,11 +99,15 @@ function LoginPageContent() {
   const handleResendVerification = async () => {
     setResendLoading(true);
     try {
-      await api.resendVerification(unverifiedEmail);
-      setResendSent(true);
-      toast.success("Verification email sent! Check your inbox.");
-    } catch {
-      toast.error("Failed to resend. Please try again.");
+      const response = await api.resendVerification(unverifiedEmail);
+      if (response.success) {
+        setResendSent(true);
+        toast.success(response.message || "Verification email sent! Check your inbox.");
+      } else {
+        toast.error(response.error || response.message || "Failed to resend. Please try again.");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resend. Please try again.");
     } finally {
       setResendLoading(false);
     }

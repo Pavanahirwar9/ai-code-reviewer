@@ -22,6 +22,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [emailDeliveryFailed, setEmailDeliveryFailed] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState("");
   const [resendLoading, setResendLoading] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string; terms?: string }>({});
@@ -93,6 +94,7 @@ export default function RegisterPage() {
     } catch (error: any) {
       if (error.needsVerification) {
         setRegisteredEmail(error.email || formData.email);
+        setEmailDeliveryFailed(!!error.emailDeliveryFailed);
         setEmailSent(true);
         return;
       }
@@ -163,15 +165,23 @@ export default function RegisterPage() {
               </CardTitle>
               <CardDescription className="text-base">
                 {emailSent
-                  ? `We sent a verification link to ${registeredEmail}`
+                  ? emailDeliveryFailed
+                    ? `Account created for ${registeredEmail}`
+                    : `We sent a verification link to ${registeredEmail}`
                   : "Get started with your free account today"}
               </CardDescription>
             </CardHeader>
             <CardContent>
               {emailSent ? (
                 <div className="space-y-4">
-                  <div className="rounded-md bg-green-500/10 border border-green-500/30 px-4 py-3 text-sm text-green-600 dark:text-green-400 text-center">
-                    Click the link in the email to activate your account. Check spam if you don&apos;t see it.
+                  <div className={`rounded-md border px-4 py-3 text-sm text-center ${
+                    emailDeliveryFailed
+                      ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-700 dark:text-yellow-400"
+                      : "bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400"
+                  }`}>
+                    {emailDeliveryFailed
+                      ? "Verification email was not delivered yet. Please click resend below after checking email settings."
+                      : "Click the link in the email to activate your account. Check spam if you don&apos;t see it."}
                   </div>
                   <Button
                     variant="outline"
@@ -180,10 +190,15 @@ export default function RegisterPage() {
                     onClick={async () => {
                       setResendLoading(true);
                       try {
-                        await api.resendVerification(registeredEmail);
-                        toast.success("Verification email resent!");
-                      } catch {
-                        toast.error("Failed to resend. Try again.");
+                        const response = await api.resendVerification(registeredEmail);
+                        if (response.success) {
+                          setEmailDeliveryFailed(false);
+                          toast.success(response.message || "Verification email resent!");
+                        } else {
+                          toast.error(response.error || response.message || "Failed to resend. Try again.");
+                        }
+                      } catch (err: any) {
+                        toast.error(err.message || "Failed to resend. Try again.");
                       } finally {
                         setResendLoading(false);
                       }
