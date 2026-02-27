@@ -14,7 +14,7 @@ const createTransporter = () => {
     const { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS } = process.env;
 
     if (!EMAIL_HOST || !EMAIL_USER || !EMAIL_PASS) {
-        logger.warn('Email not configured — set EMAIL_HOST, EMAIL_USER, EMAIL_PASS in .env');
+    logger.warn('Email not configured — set EMAIL_HOST, EMAIL_USER, EMAIL_PASS in .env');
         return null;
     }
 
@@ -42,6 +42,9 @@ const sendPasswordResetEmail = async (to, name, resetUrl) => {
     const transporter = createTransporter();
 
     if (!transporter) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Email service is not configured');
+    }
         // In development without email config, log the link so the dev can test it
         logger.info(`[DEV] Password reset link for ${to}: ${resetUrl}`);
         return { devMode: true, resetUrl };
@@ -136,6 +139,9 @@ const sendVerificationEmail = async (to, name, verifyUrl) => {
     const transporter = createTransporter();
 
     if (!transporter) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Email service is not configured');
+    }
         logger.info(`[DEV] Email verification link for ${to}: ${verifyUrl}`);
         return { devMode: true, verifyUrl };
     }

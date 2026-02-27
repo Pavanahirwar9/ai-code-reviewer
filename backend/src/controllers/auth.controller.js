@@ -108,16 +108,21 @@ exports.register = asyncHandler(async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const verifyUrl = `${frontendUrl}/verify-email/${rawToken}`;
 
-    const { sendVerificationEmail } = require('../config/email');
-    withTimeout(sendVerificationEmail(user.email, user.name, verifyUrl), 12000, 'verification email')
-        .then((result) => {
-            if (result && result.devMode) {
-                logger.info(`[DEV] Verify URL: ${verifyUrl}`);
-            }
-        })
-        .catch((emailErr) => {
-            logger.error(`Failed to send verification email for ${user.email}: ${emailErr.message}`);
-        });
+    try {
+        const { sendVerificationEmail } = require('../config/email');
+        const result = await withTimeout(
+            sendVerificationEmail(user.email, user.name, verifyUrl),
+            12000,
+            'verification email'
+        );
+        if (result && result.devMode) {
+            logger.info(`[DEV] Verify URL: ${verifyUrl}`);
+        }
+    } catch (emailErr) {
+        await User.findByIdAndDelete(user._id);
+        logger.error(`Failed to send verification email: ${emailErr.message}`);
+        return sendError(res, 'Could not send verification email. Please check email settings and try again.', 500);
+    }
 
     logger.info(`New user registered (pending verification): ${user.email}`);
 
