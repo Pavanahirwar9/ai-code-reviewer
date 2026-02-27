@@ -34,8 +34,7 @@ app.use(helmet());
 // CORS configuration
 const allowedOrigins = [
     process.env.FRONTEND_URL,
-    'http://localhost:3000',
-    'https://ai-code-reviewer-frontend.onrender.com'
+    'http://localhost:3000'
 ].filter(Boolean);
 
 const corsOptions = {
