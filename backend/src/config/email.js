@@ -11,20 +11,33 @@ const logger = require('../utils/logger');
  * Create a nodemailer transporter from environment config
  */
 const createTransporter = () => {
-    const { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS } = process.env;
+  const {
+    EMAIL_HOST,
+    EMAIL_PORT,
+    EMAIL_USER,
+    EMAIL_PASS,
+    EMAIL_SECURE,
+  } = process.env;
 
     if (!EMAIL_HOST || !EMAIL_USER || !EMAIL_PASS) {
     logger.warn('Email not configured — set EMAIL_HOST, EMAIL_USER, EMAIL_PASS in .env');
         return null;
     }
 
+    const smtpPort = Number(EMAIL_PORT) || 587;
+    const useSecure = String(EMAIL_SECURE || '').toLowerCase() === 'true' || smtpPort === 465;
+
     return nodemailer.createTransport({
         host: EMAIL_HOST,
-        port: Number(EMAIL_PORT) || 587,
-        secure: Number(EMAIL_PORT) === 465, // true for 465, false for 587
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
+      port: smtpPort,
+      secure: useSecure,
+      requireTLS: true,
+      tls: {
+        minVersion: 'TLSv1.2',
+      },
+      connectionTimeout: 20000,
+      greetingTimeout: 20000,
+      socketTimeout: 20000,
         auth: {
             user: EMAIL_USER,
             pass: EMAIL_PASS,

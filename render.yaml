@@ -44,7 +44,9 @@ services:
       - key: EMAIL_HOST
         sync: false
       - key: EMAIL_PORT
-        value: 587
+        value: 465
+      - key: EMAIL_SECURE
+        value: "true"
       - key: EMAIL_USER
         sync: false
       - key: EMAIL_PASS

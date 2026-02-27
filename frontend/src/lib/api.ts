@@ -3,7 +3,8 @@
  * API client for backend communication
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://ai-code-reviewer-backend-wbf1.onrender.com/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL
+    || (process.env.NODE_ENV === 'development' ? 'http://localhost:5000/api' : '');
 
 interface ApiResponse<T = any> {
     success: boolean;
@@ -50,6 +51,13 @@ class ApiClient {
         skipContentType = false
     ): Promise<ApiResponse<T>> {
         try {
+            if (!this.baseURL) {
+                return {
+                    success: false,
+                    error: 'API URL is not configured. Set NEXT_PUBLIC_API_URL for this environment.',
+                };
+            }
+
             const response = await fetch(`${this.baseURL}${endpoint}`, {
                 ...options,
                 headers: {
