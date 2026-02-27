@@ -2,7 +2,7 @@
 
 import React from "react"
 
-import { useState, useCallback } from "react";
+import { Suspense, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,7 +83,7 @@ const steps = [
   { number: 3, title: "Analyze", description: "Run AI-powered code analysis" },
 ];
 
-export default function CodeReviewPage() {
+function CodeReviewPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const useSample = searchParams.get("sample") === "true";
@@ -603,5 +603,13 @@ export default function CodeReviewPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function CodeReviewPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <CodeReviewPageContent />
+    </Suspense>
   );
 }

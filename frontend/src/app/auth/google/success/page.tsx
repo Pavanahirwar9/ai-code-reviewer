@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
-export default function GoogleSuccessPage() {
+function GoogleSuccessContent() {
     const router = useRouter();
     const params = useSearchParams();
 
@@ -41,5 +41,21 @@ export default function GoogleSuccessPage() {
                 <p className="text-muted-foreground text-lg">Signing you in with Google...</p>
             </div>
         </div>
+    );
+}
+
+export default function GoogleSuccessPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex items-center justify-center min-h-screen bg-background">
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="w-10 h-10 animate-spin text-primary" />
+                    <p className="text-muted-foreground text-lg">Signing you in with Google...</p>
+                </div>
+            </div>
+        }
+        >
+            <GoogleSuccessContent />
+        </Suspense>
     );
 }

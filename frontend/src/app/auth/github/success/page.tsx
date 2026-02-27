@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
-export default function GitHubSuccessPage() {
+function GitHubSuccessContent() {
     const router = useRouter();
     const params = useSearchParams();
 
@@ -43,5 +43,21 @@ export default function GitHubSuccessPage() {
                 <p className="text-muted-foreground text-lg">Connecting your GitHub account...</p>
             </div>
         </div>
+    );
+}
+
+export default function GitHubSuccessPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex items-center justify-center min-h-screen bg-background">
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="w-10 h-10 animate-spin text-primary" />
+                    <p className="text-muted-foreground text-lg">Connecting your GitHub account...</p>
+                </div>
+            </div>
+        }
+        >
+            <GitHubSuccessContent />
+        </Suspense>
     );
 }
