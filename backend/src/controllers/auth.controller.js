@@ -35,6 +35,29 @@ const getBackendApiBaseUrl = (req) => {
     return `${protocol}://${host}/api`;
 };
 
+const normalizeUrl = (value) => value.trim().replace(/\/+$/, '');
+
+const getOAuthRedirectUri = (provider, req) => {
+    const explicitRedirectUri = provider === 'google'
+        ? process.env.GOOGLE_REDIRECT_URI
+        : process.env.GITHUB_REDIRECT_URI;
+
+    if (explicitRedirectUri) {
+        return normalizeUrl(explicitRedirectUri);
+    }
+
+    const legacyCallbackUrl = provider === 'google'
+        ? process.env.GOOGLE_CALLBACK_URL
+        : process.env.GITHUB_CALLBACK_URL;
+
+    if (legacyCallbackUrl) {
+        return normalizeUrl(legacyCallbackUrl);
+    }
+
+    const backendApiBaseUrl = getBackendApiBaseUrl(req);
+    return `${backendApiBaseUrl}/auth/${provider}/callback`;
+};
+
 /**
  * @route   POST /api/auth/register
  * @desc    Register new user
@@ -258,10 +281,10 @@ exports.updatePassword = asyncHandler(async (req, res) => {
  * @access  Public
  */
 exports.githubLogin = asyncHandler(async (req, res) => {
-    const backendApiBaseUrl = getBackendApiBaseUrl(req);
+    const redirectUri = getOAuthRedirectUri('github', req);
     const params = new URLSearchParams({
         client_id: process.env.GITHUB_CLIENT_ID,
-        redirect_uri: `${backendApiBaseUrl}/auth/github/callback`,
+        redirect_uri: redirectUri,
         scope: 'user:email repo read:user',
     });
     res.redirect(`https://github.com/login/oauth/authorize?${params}`);
@@ -565,10 +588,10 @@ exports.resetPassword = asyncHandler(async (req, res) => {
  * @access  Public
  */
 exports.googleLogin = asyncHandler(async (req, res) => {
-    const backendApiBaseUrl = getBackendApiBaseUrl(req);
+    const redirectUri = getOAuthRedirectUri('google', req);
     const params = new URLSearchParams({
         client_id: process.env.GOOGLE_CLIENT_ID,
-        redirect_uri: `${backendApiBaseUrl}/auth/google/callback`,
+        redirect_uri: redirectUri,
         response_type: 'code',
         scope: 'openid email profile',
         access_type: 'offline',
@@ -585,7 +608,7 @@ exports.googleLogin = asyncHandler(async (req, res) => {
 exports.googleCallback = asyncHandler(async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const { code, error: oauthError } = req.query;
-    const backendApiBaseUrl = getBackendApiBaseUrl(req);
+    const redirectUri = getOAuthRedirectUri('google', req);
 
     // Google returned an explicit error (e.g. user denied access)
     if (oauthError) {
@@ -596,8 +619,6 @@ exports.googleCallback = asyncHandler(async (req, res) => {
     if (!code) {
         return res.redirect(`${frontendUrl}/login?error=google_no_code`);
     }
-
-    const redirectUri = `${backendApiBaseUrl}/auth/google/callback`;
 
     try {
         // 1. Exchange auth code for Google access token
