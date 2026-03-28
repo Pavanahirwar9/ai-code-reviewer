@@ -399,8 +399,8 @@ export default function ResultsPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button 
-            onClick={handleEditCode} 
+          <Button
+            onClick={handleEditCode}
             disabled={isCreatingEditor}
             variant="default"
             className="gap-2"

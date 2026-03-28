@@ -25,7 +25,7 @@ function GoogleSuccessContent() {
                         localStorage.setItem("user", JSON.stringify(data.data));
                     }
                 })
-                .catch(() => {/* non-fatal */})
+                .catch(() => {/* non-fatal */ })
                 .finally(() => {
                     router.replace("/dashboard");
                 });
